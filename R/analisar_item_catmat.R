@@ -25,7 +25,7 @@
 #' @import dplyr
 #' @import tibble
 #' @import openxlsx
-#' @importFrom stats mean median sd quantile
+#' @importFrom stats median sd quantile
 #' @export
 #'
 #' @examples
