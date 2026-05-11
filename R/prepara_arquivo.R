@@ -6,6 +6,7 @@
 #'
 #' @return Caminho completo do arquivo Excel gerado
 #' @export
+#' @import openxlsx
 prepara_arquivo <- function(dadosPrecos, nome_do_responsavel = "Nome", pasta) {
 
   # ---- Instala pacotes necessários ----
