@@ -25,6 +25,14 @@ consultar_precos <- function(codigo_item_catalogo,
                              meses = 12,
                              verbose = TRUE) {
 
+  # codigo_item_catalogo = 623744
+  # estado = NULL
+  # servico = FALSE
+  # regiao = NULL
+  # meses = 12
+  # verbose = TRUE
+
+
   # ---------------------------
   # Tabela de estados (pode virar dataset interno do pacote)
   # ---------------------------
@@ -83,15 +91,15 @@ consultar_precos <- function(codigo_item_catalogo,
       verbose = verbose
     )
 
-    if (is.null(dados) || nrow(dados) == 0) break
+    if (is.null(dados$resultado) || length(dados$resultado) == 0) break
 
-    if ("dataResultado" %in% names(dados)) {
-      data_ref <- min(dados$dataResultado, na.rm = TRUE)
+    if ("dataResultado" %in% names(dados$resultado)) {
+      data_ref <- min(dados$resultado$dataResultado, na.rm = TRUE)
     } else {
       break
     }
 
-    resultados[[pagina]] <- dados
+    resultados[[pagina]] <- dados$resultado
     pagina <- pagina + 1
 
     Sys.sleep(0.5)

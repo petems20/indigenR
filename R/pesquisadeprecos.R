@@ -522,9 +522,9 @@ pesquisa_mista <- function(codigoItem, UnFor = NULL, meses = 12, choose = TRUE, 
 
   }
 
-  dadosPrecosSaneados <- sanear_dados(dadosPrecos, marca_excluidos = T)
+  dadosPrecosSaneados <- sanear_precos(dadosPrecos, marca_excluidos = T)
 
-  dadosPrecosSaneados |> group_by(unidadeFornecimento) |> prepara_arquivo()
+  dadosPrecosSaneados |> group_by(unidadeFornecimento) |> prepara_arquivo(pasta = pasta)
 
 }
 
