@@ -1,25 +1,39 @@
 Package: indigenR
 Type: Package
-Title: What the Package Does (Title Case)
+Title: Ferramentas para Consumo de Sistemas Estruturantes do Governo Federal
 Version: 0.1.0
 Authors@R: c(
     person(
-      "Jane", "Doe",
-      email = "jane@example.com",
+      "Pedro Henrique", "Medeiros dos Santos",
+      email = "contatopedrohttps@gmail.com",
       role = c("aut", "cre")
     )
   )
-Description: More about what it does (maybe more than one line).
-    Continuation lines should be indented.
-License: What license is it under?
+Description: Conjunto de utilitários para consumo de APIs de sistemas estruturantes do
+    Governo Federal brasileiro (SIORG, Compras.gov, PNCP) — consulta paginada com
+    retentativa, montagem de grafos de estrutura organizacional e classificação
+    hierárquica, geocodificação de endereços de unidades e apoio à pesquisa de preços
+    (saneamento estatístico de outliers e cálculo de preço de referência) sob as Leis
+    8.666/1993 e 14.133/2021. Embora desenvolvido para a Funai, as funções são
+    genéricas e aplicáveis a qualquer órgão ou entidade da administração pública
+    federal cadastrado nesses sistemas.
+License: MIT + file LICENSE
 Encoding: UTF-8
-LazyData: true
 Imports:
     dplyr,
     lubridate,
     jsonlite,
     httr,
     stringr,
-    rlang,
-    tibble
+    tibble,
+    tidyr,
+    purrr,
+    glue,
+    openxlsx,
+    readxl,
+    readr,
+    geocodebr,
+    igraph,
+    sf,
+    stats
 RoxygenNote: 7.3.3

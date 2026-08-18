@@ -1,4 +1,7 @@
+#' Requisição de baixo nível para a API de Contratos (Compras.gov), com retentativa
+#'
 #' @keywords internal
+#' @noRd
 #' @importFrom httr GET status_code content
 #' @importFrom jsonlite fromJSON
 puxa_api_contratos <- function(url, verbose = TRUE, max_tries = 5) {
@@ -24,7 +27,6 @@ puxa_api_contratos <- function(url, verbose = TRUE, max_tries = 5) {
 
     # --- Sucesso ---
     txt <- httr::content(resp, "text", encoding = "UTF-8")
-    res <- jsonlite::fromJSON(txt, flatten = TRUE)
-    return(res)
+    return(jsonlite::fromJSON(txt, flatten = TRUE))
   }
 }

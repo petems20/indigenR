@@ -12,6 +12,7 @@
 #'   \item demais colunas originais
 #' }
 #' @keywords internal
+#' @noRd
 #' @importFrom dplyr mutate case_when select rename
 #' @importFrom stringr str_trim
 padroniza_unidadeF <- function(dadosBrutos, servico = FALSE) {

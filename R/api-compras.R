@@ -1,3 +1,49 @@
+#' Requisição de baixo nível para a API de Compras.gov, com retentativa
+#'
+#' @description
+#' Faz uma única requisição \code{GET} a um endpoint já pronto (com querystring montada)
+#' da API de Compras.gov, tratando limite de requisições (HTTP 429, com o tempo de espera
+#' sugerido pela própria API) via retentativa.
+#'
+#' @param url \code{character}. URL completa da requisição, já com parâmetros.
+#' @param verbose \code{logical}. Se \code{TRUE}, imprime mensagens de progresso.
+#' @param max_tries \code{integer}. Número máximo de tentativas em caso de erro.
+#'
+#' @return Lista com o conteúdo JSON decodificado da resposta, ou o objeto \code{httr::response}
+#' em caso de erro HTTP não recuperável.
+#' @keywords internal
+#' @noRd
+#' @importFrom httr GET status_code content
+#' @importFrom jsonlite fromJSON
+#' @importFrom stringr str_extract
+puxa_api_compras <- function(url, verbose = TRUE, max_tries = 5) {
+  tentativa <- 1
+  repeat {
+    if (verbose) cat("Extraindo dados da URL: ", url, '\n')
+
+    res <- httr::GET(url)
+    sc <- httr::status_code(res)
+
+    # --- Rate limit ---
+    if (sc == 429) {
+      body <- httr::content(res, "text", encoding = "UTF-8")
+      msg <- jsonlite::fromJSON(body)$message
+      segundos <- as.integer(stringr::str_extract(msg, "(?<=Try again in )\\d+(?= seconds)"))
+      wait_time <- ifelse(is.na(segundos), 5, segundos)
+      if (verbose) cat("Rate limit. Esperando ", wait_time, " segundos...\n")
+      Sys.sleep(wait_time + 1)
+      next
+    }
+
+    if (sc >= 400) {
+      cat(sprintf("Falha na requisição. Status HTTP: %d", sc), '\n')
+      return(res)  # Retorna o objeto httr com erro
+    }
+
+    return(jsonlite::fromJSON(httr::content(res, "text", encoding = "UTF-8"), flatten = TRUE))
+  }
+}
+
 #' Extrai todos os dados paginados da API de Compras usando lista de parâmetros
 #'
 #' @description

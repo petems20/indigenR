@@ -1,15 +1,16 @@
-#' Consultar detalhes do PGC (Projeto de Gestão de Compras)
+#' Consultar detalhes do PGC (Plano de Contratações)
 #'
-#' Extrai informações detalhadas de itens do PGC via API.
+#' Extrai informações detalhadas de itens do PGC via API de Compras.gov.
 #'
-#' @param orgao Código ou sigla do órgão (REQUIRED)
-#' @param anoPca Ano do PCA (REQUIRED)
+#' @param orgao Código ou sigla do órgão (obrigatório)
+#' @param anoPca Ano do PCA (obrigatório)
 #' @param delay_segundos Tempo de espera entre requisições (default 0.5s)
 #'
-#' @return Tibble com os detalhes do PGC ou objeto da API em caso de erro.
+#' @return Tibble com os detalhes do PGC.
 #' @export
 #' @importFrom dplyr bind_rows mutate across ends_with
 #' @importFrom tidyr unnest_wider
+#' @importFrom tibble tibble
 #' @importFrom lubridate ymd_hms
 consultarPgcDetalhe <- function(orgao, anoPca, delay_segundos = 0.5) {
 
@@ -55,7 +56,6 @@ consultarPgcDetalhe <- function(orgao, anoPca, delay_segundos = 0.5) {
     todos_dados[[pagina]] <- df
 
     # PAGINAÇÃO
-    paginasRestantes <- resultado$paginasRestantes
     if (resultado$paginasRestantes == 0) break
     pagina <- pagina + 1
     Sys.sleep(delay_segundos)

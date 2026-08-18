@@ -25,14 +25,6 @@ consultar_precos <- function(codigo_item_catalogo,
                              meses = 12,
                              verbose = TRUE) {
 
-  # codigo_item_catalogo = 623744
-  # estado = NULL
-  # servico = FALSE
-  # regiao = NULL
-  # meses = 12
-  # verbose = TRUE
-
-
   # ---------------------------
   # Tabela de estados (pode virar dataset interno do pacote)
   # ---------------------------
