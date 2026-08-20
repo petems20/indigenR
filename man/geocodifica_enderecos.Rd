@@ -13,7 +13,7 @@ Deve conter as colunas: \code{codigoUnidade}, \code{logradouro}, \code{numero},
 }
 \value{
 Um objeto espacial do tipo \code{sf} contendo os dados das unidades
-geocodificadas e suas respectivas coordenadas.
+  geocodificadas e suas respectivas coordenadas.
 }
 \description{
 Prepara os campos de endereço de um relatório de estrutura organizacional (qualquer

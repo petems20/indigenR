@@ -8,17 +8,20 @@ export(consultarPgcDetalhe)
 export(consultar_precos)
 export(cria_resumo_pesquisa)
 export(funai_estrutura_completa)
+export(funai_importa_siape)
 export(funai_relatorio_estrutura)
 export(geocodifica_enderecos)
 export(pesquisa_mista)
 export(prepara_arquivo)
 export(prepara_dados_estrutura)
 export(puxa_api_compras_completo)
+export(puxa_api_contratos_completo)
 export(puxa_api_pncp_completo)
 export(regressao_estado)
 export(regressao_regiao)
 export(rotear_multimodal)
 export(sanear_precos)
+export(siape_importa_dados)
 export(siorg_estrutura_completa)
 import(dplyr)
 import(httr)
@@ -65,16 +68,19 @@ importFrom(glue,
 )
 importFrom(httr,
   GET,
+  HEAD,
   POST,
   add_headers,
   build_url,
   content,
+  headers,
   http_error,
   modify_url,
   parse_url,
   status_code,
   stop_for_status,
-  timeout
+  timeout,
+  write_disk
 )
 importFrom(igraph,
   V,
@@ -88,8 +94,10 @@ importFrom(jsonlite,
 importFrom(lubridate,
   `%m-%`,
   interval,
+  month,
   time_length,
   today,
+  year,
   ymd_hms
 )
 importFrom(openxlsx,read.xlsx)
@@ -100,7 +108,13 @@ importFrom(purrr,
   map_int,
   walk2
 )
-importFrom(readr,write_csv2)
+importFrom(readr,
+  cols,
+  locale,
+  read_delim,
+  write_csv,
+  write_csv2
+)
 importFrom(readxl,read_xls)
 importFrom(sf,
   st_as_sfc,
@@ -124,11 +138,14 @@ importFrom(stats,
   setNames
 )
 importFrom(stringr,
+  str_detect,
   str_extract,
   str_match_all,
+  str_remove_all,
   str_trim
 )
 importFrom(tibble,
+  as_tibble,
   tibble,
   tribble
 )
