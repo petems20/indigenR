@@ -67,6 +67,22 @@
   stats::setNames(as.numeric(bbox), c("xmin", "ymin", "xmax", "ymax"))
 }
 
+#' Normaliza uma coleção sf para LINESTRING uniforme, explodindo MULTILINESTRING
+#'
+#' `sfnetworks::as_sfnetwork()` exige geometria uniforme e falha se houver uma mistura de
+#' `LINESTRING`/`MULTILINESTRING` — o que acontece na prática, já que tanto o Overpass quanto
+#' o `sf::st_crop()` (por tile e no bbox final) podem produzir `MULTILINESTRING` a partir de
+#' uma via que é cortada em pedaços desconexos. Um `sf::st_cast(x, "LINESTRING")` direto sobre
+#' geometria mista descarta partes de cada `MULTILINESTRING` silenciosamente; o cast em dois
+#' passos (via `MULTILINESTRING` primeiro) explode cada uma corretamente em várias linhas.
+#' @keywords internal
+#' @noRd
+#' @importFrom sf st_cast st_is_empty st_geometry_type
+.normaliza_linhas <- function(x) {
+  x <- suppressWarnings(sf::st_cast(sf::st_cast(x, "MULTILINESTRING"), "LINESTRING"))
+  x[!sf::st_is_empty(x) & sf::st_geometry_type(x) == "LINESTRING", ]
+}
+
 #' Busca um único tile no Overpass, com retentativa e backoff exponencial
 #'
 #' @description
@@ -157,7 +173,10 @@
 #' @param verbose Se `TRUE`, imprime mensagens de progresso.
 #'
 #' @return Objeto `sf` (LINESTRING, EPSG:4326) com as waterways da área, colunas
-#'   `osm_id`, `waterway`, `name`, `width`, `boat`, `motorboat`, `draft`.
+#'   `osm_id`, `waterway`, `name`, `width`, `boat`, `motorboat`, `draft`. A geometria é sempre
+#'   normalizada para `LINESTRING` uniforme (`MULTILINESTRING` — comuns após o recorte por
+#'   `sf::st_crop()` — são explodidas em várias linhas) antes de retornar, mesmo quando parte
+#'   dos dados vem de um tile já cacheado de uma versão anterior desta função.
 #'
 #' @export
 #' @importFrom sf st_crop st_as_sfc st_bbox
@@ -234,7 +253,7 @@ busca_hidrovias_osm <- function(
 
   combinado <- combinado[!duplicated(combinado$osm_id), ]
 
-  suppressWarnings(
+  .normaliza_linhas(suppressWarnings(
     sf::st_crop(combinado, .bbox_nomeado(bbox))
-  )
+  ))
 }

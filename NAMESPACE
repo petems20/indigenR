@@ -23,6 +23,7 @@ export(rotear_multimodal)
 export(sanear_precos)
 export(siape_importa_dados)
 export(siorg_estrutura_completa)
+export(triagem_rodovia_lote)
 import(dplyr)
 import(httr)
 import(jsonlite)
@@ -117,13 +118,17 @@ importFrom(readr,
 )
 importFrom(readxl,read_xls)
 importFrom(sf,
+  st_as_sf,
   st_as_sfc,
   st_bbox,
+  st_cast,
   st_coordinates,
   st_crop,
   st_crs,
   st_distance,
   st_geometry,
+  st_geometry_type,
+  st_is_empty,
   st_linestring,
   st_sf,
   st_sfc,

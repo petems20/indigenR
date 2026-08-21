@@ -34,7 +34,10 @@ busca_hidrovias_osm(
 }
 \value{
 Objeto `sf` (LINESTRING, EPSG:4326) com as waterways da área, colunas
-  `osm_id`, `waterway`, `name`, `width`, `boat`, `motorboat`, `draft`.
+  `osm_id`, `waterway`, `name`, `width`, `boat`, `motorboat`, `draft`. A geometria é sempre
+  normalizada para `LINESTRING` uniforme (`MULTILINESTRING` — comuns após o recorte por
+  `sf::st_crop()` — são explodidas em várias linhas) antes de retornar, mesmo quando parte
+  dos dados vem de um tile já cacheado de uma versão anterior desta função.
 }
 \description{
 Baixa `waterway=river/canal/...` do Overpass API (via \pkg{osmdata}) para o bbox informado,

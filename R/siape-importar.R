@@ -304,6 +304,9 @@
 #'
 #' @return Um \code{tibble} com os dados de servidores (todas as colunas como
 #'   \code{character}, para preservar zeros à esquerda em campos como CPF e matrícula).
+#'   O anomês efetivamente usado (\code{AAAAMM}) fica em
+#'   \code{attr(resultado, "anomes")} — útil quando \code{anomes = NULL} pede
+#'   auto-detecção e o chamador precisa saber qual mês foi resolvido.
 #'
 #' @export
 #'
@@ -347,6 +350,12 @@ siape_importa_dados <- function(anomes = NULL,
     if (verbose) message("Arquivo salvo em: ", destino)
   }
 
+  # Anexado como atributo (não como coluna) para não alterar o schema retornado — o
+  # anomês efetivamente resolvido (sobretudo quando `anomes = NULL` pede
+  # auto-detecção) é útil para o chamador exibir a data de referência dos dados, sem
+  # precisar reimplementar .siape_localiza_anomes_disponivel() por fora do pacote.
+  attr(dados, "anomes") <- anomes_final
+
   dados
 }
 
@@ -360,7 +369,8 @@ siape_importa_dados <- function(anomes = NULL,
 #' @param destino Caminho de um arquivo \code{.csv} onde salvar o resultado. Se
 #'   \code{NULL} (padrão), o resultado apenas é retornado, sem gravar em disco.
 #'
-#' @return Um \code{tibble} com os dados dos servidores da Funai.
+#' @return Um \code{tibble} com os dados dos servidores da Funai. O anomês
+#'   efetivamente usado (\code{AAAAMM}) fica em \code{attr(resultado, "anomes")}.
 #'
 #' @export
 #'
