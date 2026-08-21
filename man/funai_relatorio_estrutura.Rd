@@ -8,12 +8,14 @@ funai_relatorio_estrutura()
 }
 \value{
 Um \code{data.frame} contendo as informações tabulares do relatório dinâmico,
-já combinadas com a classificação hierárquica e a geocodificação das unidades.
+já combinadas com a classificação hierárquica, a geocodificação das unidades e, para
+cada linha de cargo comissionado, valor em R$ e pontuação unitária (ver
+\code{\link{prepara_dados_estrutura}}).
 }
 \description{
 Extrai o relatório dinâmico completo das unidades organizacionais da Funai
 diretamente da API do SIORG e o enriquece via \code{\link{prepara_dados_estrutura}}
-(classificação hierárquica, dados territoriais e geocodificação). O \code{payload} segue
-estritamente a validação do backend do SIORG Cidadão para evitar erros de requisição
-(HTTP 400).
+(classificação hierárquica, dados territoriais, geocodificação e valor/pontuação dos
+cargos comissionados CCE/FCE). O \code{payload} segue estritamente a validação do
+backend do SIORG Cidadão para evitar erros de requisição (HTTP 400).
 }

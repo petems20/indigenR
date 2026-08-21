@@ -36,6 +36,9 @@ conexão ou HTTP.}
 \value{
 Um \code{tibble} com os dados de servidores (todas as colunas como
   \code{character}, para preservar zeros à esquerda em campos como CPF e matrícula).
+  O anomês efetivamente usado (\code{AAAAMM}) fica em
+  \code{attr(resultado, "anomes")} — útil quando \code{anomes = NULL} pede
+  auto-detecção e o chamador precisa saber qual mês foi resolvido.
 }
 \description{
 Baixa o arquivo mensal "Cadastro de Servidores SIAPE" do Portal da Transparência

@@ -45,6 +45,48 @@ siorg_post <- function(endpoint, body = list()) {
   return(res)
 }
 
+#' Catálogo de referência dos níveis de cargos comissionados do SIORG (CCE, FCE, ...)
+#'
+#' @description Consulta o catálogo de níveis de cargos comissionados do SIORG Cidadão
+#' (endpoint `cargos-comissionados/cargos`) — uma referência genérica de valores em R$ e
+#' pontos por nível, sem vínculo a nenhum órgão específico (o endpoint não recebe
+#' parâmetro de órgão). Usado para enriquecer os cargos retornados pelo relatório
+#' dinâmico (ver \code{\link{prepara_dados_estrutura}}) com valor e pontuação por
+#' unidade, sem precisar de uma segunda cópia dessa lógica em cada projeto consumidor.
+#'
+#' @param siglas Vetor de siglas de cargo comissionado a consultar. Padrão:
+#'   \code{c("CCE", "FCE")}.
+#'
+#' @return Tibble com uma linha por nível de cargo: \code{sigla}, \code{categoria}
+#'   (character), \code{nivel} (character, 2 dígitos, zero-padded), \code{cargo_label}
+#'   (ex: \code{"FCE 1.05"}), \code{valor} (R$ do nível) e \code{cceUnitario}
+#'   (pontos/unidades do nível — ex: FCE categoria 1 nível 09 tem \code{cceUnitario =
+#'   1.0} exatamente, o ponto de referência da escala).
+#'
+#' @export
+#' @importFrom httr GET stop_for_status content
+#' @importFrom jsonlite fromJSON
+#' @importFrom dplyr bind_rows mutate
+siorg_catalogo_cargos_comissionados <- function(siglas = c("CCE", "FCE")) {
+
+  buscar <- function(sigla) {
+    url <- paste0(
+      "https://siorg.gov.br/siorg-cidadao-webapp/api/cargos-comissionados/cargos?sigla=",
+      sigla
+    )
+    res <- httr::GET(url)
+    httr::stop_for_status(res)
+    jsonlite::fromJSON(httr::content(res, "text", encoding = "UTF-8"))
+  }
+
+  dplyr::bind_rows(lapply(siglas, buscar)) |>
+    dplyr::mutate(
+      categoria = trimws(as.character(categoria)),
+      nivel = formatC(as.integer(nivel), width = 2, flag = "0"),
+      cargo_label = paste0(sigla, " ", categoria, ".", nivel)
+    )
+}
+
 #' Estrutura organizacional da Funai, com classificação hierárquica e geocodificação
 #'
 #' Consulta a estrutura organizacional completa da Funai via
@@ -53,16 +95,21 @@ siorg_post <- function(endpoint, body = list()) {
 #' obter nome do município e UF a partir do código de município) e geocodifica os
 #' endereços das unidades via \code{\link{geocodifica_enderecos}}.
 #'
-#' @param dados Data.frame originado do relatório dinâmico do SIORG (precisa ter a coluna
-#'   \code{Código Unidade}) — normalmente o retorno de \code{\link{funai_relatorio_estrutura}}.
+#' @param dados Data.frame originado do relatório dinâmico do SIORG (precisa ter as colunas
+#'   \code{Código Unidade}, \code{Tipo do Cargo}, \code{Categoria} e \code{Nível}) —
+#'   normalmente o retorno de \code{\link{funai_relatorio_estrutura}}.
 #'
 #' @return Um \code{data.frame} combinando o relatório dinâmico informado com a
-#' classificação hierárquica, dados territoriais do IBGE e coordenadas geográficas.
+#' classificação hierárquica, dados territoriais do IBGE, coordenadas geográficas e,
+#' para cada linha de cargo comissionado (CCE/FCE), o valor unitário em R$ e a
+#' pontuação unitária do nível (\code{Valor Unitário Cargo (R$)}, \code{Pontos
+#' Unitário Cargo} — via \code{\link{siorg_catalogo_cargos_comissionados}}; \code{NA}
+#' nas linhas que não são de cargo comissionado).
 #'
 #' @importFrom httr GET http_error status_code content
 #' @importFrom jsonlite fromJSON
 #' @importFrom dplyr mutate across starts_with distinct rename transmute filter left_join
-#'   arrange select join_by
+#'   arrange select join_by if_else
 #' @importFrom tidyr unnest
 #' @importFrom readxl read_xls
 #' @import sf
@@ -126,6 +173,37 @@ prepara_dados_estrutura <- function(dados) {
     dplyr::mutate(codigoUnidade = as.character(`Código Unidade`)) |>
     dplyr::left_join(niveis, by = "codigoUnidade")
 
+  # PONTOS/VALOR UNITÁRIO DOS CARGOS COMISSIONADOS (CCE/FCE) ----
+  # Catálogo agnóstico de órgão (`siorg_catalogo_cargos_comissionados()`, mesmo
+  # endpoint sem parâmetro de órgão) — junta valor em R$ e pontos por nível direto nas
+  # linhas de cargo do relatório, para que qualquer projeto consumidor (ex. cálculo de
+  # pontuação de CCE/FCE por unidade) não precise buscar e casar esse catálogo de novo.
+  # Linhas sem cargo (Tipo do Cargo/Categoria/Nível vazios) ficam com NA nas duas
+  # colunas novas, sem afetar o restante do relatório.
+  catalogo_cargos <- siorg_catalogo_cargos_comissionados()
+
+  dados_join <- dados_join |>
+    dplyr::mutate(
+      .sigla_cargo = trimws(`Tipo do Cargo`),
+      .categoria_cargo = trimws(as.character(Categoria)),
+      .nivel_int = suppressWarnings(as.integer(`Nível`)),
+      .nivel_cargo = dplyr::if_else(
+        is.na(.nivel_int), NA_character_, formatC(.nivel_int, width = 2, flag = "0")
+      )
+    ) |>
+    dplyr::left_join(
+      catalogo_cargos |>
+        dplyr::transmute(
+          .sigla_cargo = sigla,
+          .categoria_cargo = categoria,
+          .nivel_cargo = nivel,
+          `Valor Unitário Cargo (R$)` = valor,
+          `Pontos Unitário Cargo` = cceUnitario
+        ),
+      by = c(".sigla_cargo", ".categoria_cargo", ".nivel_cargo")
+    ) |>
+    dplyr::select(-.sigla_cargo, -.categoria_cargo, -.nivel_int, -.nivel_cargo)
+
   dados_final <- dados_final_geocodificado |>
     dplyr::left_join(dados_join, by = "codigoUnidade") |>
     dplyr::select(-codigoUnidade)
@@ -137,12 +215,14 @@ prepara_dados_estrutura <- function(dados) {
 #'
 #' @description Extrai o relatório dinâmico completo das unidades organizacionais da Funai
 #' diretamente da API do SIORG e o enriquece via \code{\link{prepara_dados_estrutura}}
-#' (classificação hierárquica, dados territoriais e geocodificação). O \code{payload} segue
-#' estritamente a validação do backend do SIORG Cidadão para evitar erros de requisição
-#' (HTTP 400).
+#' (classificação hierárquica, dados territoriais, geocodificação e valor/pontuação dos
+#' cargos comissionados CCE/FCE). O \code{payload} segue estritamente a validação do
+#' backend do SIORG Cidadão para evitar erros de requisição (HTTP 400).
 #'
 #' @return Um \code{data.frame} contendo as informações tabulares do relatório dinâmico,
-#' já combinadas com a classificação hierárquica e a geocodificação das unidades.
+#' já combinadas com a classificação hierárquica, a geocodificação das unidades e, para
+#' cada linha de cargo comissionado, valor em R$ e pontuação unitária (ver
+#' \code{\link{prepara_dados_estrutura}}).
 #'
 #' @importFrom httr content
 #' @export

@@ -7,12 +7,17 @@
 prepara_dados_estrutura(dados)
 }
 \arguments{
-\item{dados}{Data.frame originado do relatório dinâmico do SIORG (precisa ter a coluna
-\code{Código Unidade}) — normalmente o retorno de \code{\link{funai_relatorio_estrutura}}.}
+\item{dados}{Data.frame originado do relatório dinâmico do SIORG (precisa ter as colunas
+\code{Código Unidade}, \code{Tipo do Cargo}, \code{Categoria} e \code{Nível}) —
+normalmente o retorno de \code{\link{funai_relatorio_estrutura}}.}
 }
 \value{
 Um \code{data.frame} combinando o relatório dinâmico informado com a
-classificação hierárquica, dados territoriais do IBGE e coordenadas geográficas.
+classificação hierárquica, dados territoriais do IBGE, coordenadas geográficas e,
+para cada linha de cargo comissionado (CCE/FCE), o valor unitário em R$ e a
+pontuação unitária do nível (\code{Valor Unitário Cargo (R$)}, \code{Pontos
+Unitário Cargo} — via \code{\link{siorg_catalogo_cargos_comissionados}}; \code{NA}
+nas linhas que não são de cargo comissionado).
 }
 \description{
 Consulta a estrutura organizacional completa da Funai via

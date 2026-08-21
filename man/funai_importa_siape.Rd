@@ -14,7 +14,8 @@ anomês mais recente disponível — ver \code{\link{siape_importa_dados}}.}
 \code{NULL} (padrão), o resultado apenas é retornado, sem gravar em disco.}
 }
 \value{
-Um \code{tibble} com os dados dos servidores da Funai.
+Um \code{tibble} com os dados dos servidores da Funai. O anomês
+  efetivamente usado (\code{AAAAMM}) fica em \code{attr(resultado, "anomes")}.
 }
 \description{
 Conveniência sobre \code{\link{siape_importa_dados}} que já filtra pelo código de
