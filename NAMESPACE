@@ -25,6 +25,8 @@ export(siape_importa_dados)
 export(siorg_catalogo_cargos_comissionados)
 export(siorg_estrutura_completa)
 export(triagem_rodovia_lote)
+export(visdata_importa_indicador)
+export(visdata_importa_racor_indigena)
 import(dplyr)
 import(httr)
 import(jsonlite)
@@ -82,6 +84,7 @@ importFrom(httr,
   status_code,
   stop_for_status,
   timeout,
+  user_agent,
   write_disk
 )
 importFrom(igraph,
