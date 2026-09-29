@@ -9,7 +9,12 @@ export(consultarPgcDetalhe)
 export(consultar_precos)
 export(cria_resumo_pesquisa)
 export(funai_estrutura_completa)
+export(funai_importa_aldeias)
+export(funai_importa_coordenacoes_regionais)
+export(funai_importa_coordenacoes_tecnicas_locais)
 export(funai_importa_siape)
+export(funai_importa_terras_indigenas)
+export(funai_importa_tis_estudo)
 export(funai_relatorio_estrutura)
 export(geocodifica_enderecos)
 export(pesquisa_mista)
@@ -18,6 +23,7 @@ export(prepara_dados_estrutura)
 export(puxa_api_compras_completo)
 export(puxa_api_contratos_completo)
 export(puxa_api_pncp_completo)
+export(puxa_wfs_completo)
 export(regressao_estado)
 export(regressao_regiao)
 export(rotear_multimodal)
@@ -136,6 +142,7 @@ importFrom(sf,
   st_geometry_type,
   st_is_empty,
   st_linestring,
+  st_read,
   st_sf,
   st_sfc,
   st_transform
