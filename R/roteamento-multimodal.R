@@ -293,8 +293,10 @@
 #'
 #' @description
 #' Busca as waterways do retângulo envolvente de todos os pontos do grupo (+ margem), monta
-#' a rede e o grafo uma única vez, insere todos os pontos de uma vez e roda um Dijkstra por
-#' origem distinta (\code{.caminhos_hidroviarios}), cobrindo todos os destinos dela.
+#' a rede e o grafo uma única vez e liga cada ponto a cada componente conexa da rede ao
+#' alcance da caminhada (\code{.acessos_por_componente}). Para cada par vale a combinação
+#' de acessos (na mesma componente) com o menor tempo total; roda um Dijkstra por nó de
+#' acesso de origem (\code{.caminhos_hidroviarios}), cobrindo todos os destinos dele.
 #'
 #' @return Lista com um elemento por par: `list(candidata, motivo, nao_conectado)`.
 #'   `nao_conectado = TRUE` marca os pares que podem se resolver com uma área de busca maior.
@@ -345,14 +347,11 @@
   net <- .constroi_rede_hidroviaria(sf_hid, crs_metrico = crs_metrico, tolerancia_juncao_m = tolerancia_juncao_m)
   pontos_m <- sf::st_transform(pontos_4326, crs_metrico)
 
-  # tolerancia de encaixe generosa: sempre medir a distancia real de acesso e so entao
-  # decidir se ela viola max_caminhada_km, em vez de o encaixe falhar silenciosamente antes.
-  blend <- .insere_pontos_rede(net, pontos_m, tolerance_m = max_caminhada_km * 1000 * 3)
-  acesso_km <- blend$dist_acesso_m / 1000
-  geom_nos <- sf::st_geometry(blend$net |> sfnetworks::activate("nodes") |> sf::st_as_sf())
+  acessos <- .acessos_por_componente(net, pontos_m, max_dist_m = max_caminhada_km * 1000)
+  opcoes <- acessos$opcoes
 
   grafo <- .grafo_hidroviario(
-    blend$net,
+    acessos$net,
     vel_jusante_kmh = vel_jusante_kmh,
     vel_montante_kmh = vel_montante_kmh,
     direcionar_fluxo = direcionar_fluxo
@@ -360,41 +359,63 @@
 
   resultado <- vector("list", n)
 
-  acesso_ok <- acesso_km[idx_origem] <= max_caminhada_km & acesso_km[idx_destino] <= max_caminhada_km
-  for (i in which(!acesso_ok)) {
-    resultado[[i]] <- descarte(paste0(
-      "caminhada de acesso excede max_caminhada_km (origem ", round(acesso_km[idx_origem[i]], 1),
-      " km, destino ", round(acesso_km[idx_destino[i]], 1), " km; limite ", max_caminhada_km, " km)"
-    ))
+  # Combinações (par, acesso de origem, acesso de destino) na mesma componente conexa.
+  combinacoes <- list()
+  for (i in seq_len(n)) {
+    op_o <- opcoes[opcoes$ponto == idx_origem[i], ]
+    op_d <- opcoes[opcoes$ponto == idx_destino[i], ]
+
+    if (nrow(op_o) == 0 || nrow(op_d) == 0) {
+      resultado[[i]] <- descarte(paste0(
+        "caminhada de acesso excede max_caminhada_km (origem ",
+        round(acessos$dist_min_km[idx_origem[i]], 1), " km, destino ",
+        round(acessos$dist_min_km[idx_destino[i]], 1), " km; limite ", max_caminhada_km, " km)"
+      ))
+      next
+    }
+
+    comb <- merge(op_o, op_d, by = "componente", suffixes = c("_o", "_d"))
+    if (nrow(comb) == 0) {
+      resultado[[i]] <- descarte(
+        paste0(
+          "origem e destino nao estao conectados pela rede de waterways encontrada ",
+          "(margem de busca de ", buffer_km, " km)"
+        ),
+        nao_conectado = TRUE
+      )
+      next
+    }
+    comb$par <- i
+    combinacoes[[length(combinacoes) + 1]] <- comb
   }
 
-  for (u in unique(idx_origem[acesso_ok])) {
-    pares <- which(acesso_ok & idx_origem == u)
-    caminhos <- .caminhos_hidroviarios(grafo, blend$idx_nos[u], blend$idx_nos[idx_destino[pares]])
+  if (length(combinacoes) == 0) return(resultado)
+  combinacoes <- do.call(rbind, combinacoes)
 
-    for (j in seq_along(pares)) {
-      i <- pares[j]
-      if (!caminhos[[j]]$viavel) {
-        resultado[[i]] <- descarte(
-          paste0(
-            "origem e destino nao estao conectados pela rede de waterways encontrada ",
-            "(margem de busca de ", buffer_km, " km)"
-          ),
-          nao_conectado = TRUE
-        )
-        next
-      }
-      resultado[[i]] <- list(
-        candidata = .monta_candidata_hidrovia(
-          pontos_m[u, ], pontos_m[idx_destino[i], ],
-          geom_nos[blend$idx_nos[u]], geom_nos[blend$idx_nos[idx_destino[i]]],
-          acesso_km[u], acesso_km[idx_destino[i]], caminhos[[j]],
-          vel_caminhada_kmh, crs_metrico, nrow(sf_hid)
-        ),
-        motivo = NA_character_,
-        nao_conectado = FALSE
-      )
-    }
+  # Um Dijkstra por nó de acesso de origem, cobrindo todos os destinos que dependem dele.
+  caminhos <- vector("list", nrow(combinacoes))
+  for (no_o in unique(combinacoes$no_o)) {
+    linhas <- which(combinacoes$no_o == no_o)
+    caminhos[linhas] <- .caminhos_hidroviarios(grafo, no_o, combinacoes$no_d[linhas])
+  }
+  combinacoes$tempo_total_h <- vapply(seq_len(nrow(combinacoes)), function(r) {
+    if (!caminhos[[r]]$viavel) return(Inf)
+    (combinacoes$acesso_km_o[r] + combinacoes$acesso_km_d[r]) / vel_caminhada_kmh + caminhos[[r]]$tempo_h
+  }, numeric(1))
+
+  for (i in unique(combinacoes$par)) {
+    linhas <- which(combinacoes$par == i)
+    r <- linhas[which.min(combinacoes$tempo_total_h[linhas])]
+    resultado[[i]] <- list(
+      candidata = .monta_candidata_hidrovia(
+        pontos_m[idx_origem[i], ], pontos_m[idx_destino[i], ],
+        acessos$geom_nos[combinacoes$no_o[r]], acessos$geom_nos[combinacoes$no_d[r]],
+        combinacoes$acesso_km_o[r], combinacoes$acesso_km_d[r], caminhos[[r]],
+        vel_caminhada_kmh, crs_metrico, nrow(sf_hid)
+      ),
+      motivo = NA_character_,
+      nao_conectado = FALSE
+    )
   }
 
   resultado
@@ -939,19 +960,6 @@ rotear_mais_proximo <- function(
     sf::st_distance(origens_4326, destinos_4326, by_element = TRUE)
   ) / 1000
 
-  # Defesa extra: se mesmo assim vier tudo zero para pares com origem != destino (ex. servidor
-  # com o servico de tabela mal configurado), falhar com uma mensagem clara em vez de devolver
-  # uma triagem incorreta.
-  pares_reais <- dist_linha_reta_km > 0
-  if (any(pares_reais) && all(distancia_rodovia_km[pares_reais] == 0, na.rm = TRUE)) {
-    stop(
-      "osrm::osrmTable() retornou apenas zeros para todos os pares com origem != destino no ",
-      "servidor OSRM usado (\"", osrm_server, "\", perfil \"", osrm_profile, "\"). Verifique se ",
-      "o perfil e' valido para esse servidor ou tente outro servidor.",
-      call. = FALSE
-    )
-  }
-
   # tab$sources/$destinations sao os pontos unicos de 'loc' (identicos entre si, em modo
   # loc) - reusar idx_origens/idx_destinos (o mesmo mapeamento p/ pontos duplicados) para
   # pegar os pontos de origem/destino correspondentes a cada par.
@@ -966,6 +974,25 @@ rotear_mais_proximo <- function(
     sf::st_as_sf(tab$destinations[idx_destinos, ], coords = c("lon", "lat"), crs = 4326),
     by_element = TRUE
   )) / 1000
+
+  # Defesa extra: se mesmo assim vier tudo zero para pares que deveriam ter rota (origem !=
+  # destino e os dois pontos encaixados perto da malha), o servidor esta respondendo errado
+  # (ex. servico de tabela mal configurado) - falhar com mensagem clara em vez de devolver uma
+  # triagem incorreta. Pares com encaixe distante ficam de fora: dois pontos isolados podem
+  # ser encaixados no mesmo trecho de estrada e ter distancia zero legitimamente (a critica
+  # de snap os descarta depois).
+  pares_reais <- dist_linha_reta_km > 0 &
+    snap_origem_km <= max_snap_osrm_km & snap_destino_km <= max_snap_osrm_km
+  # Pares sem rota voltam NA (null no OSRM) e ficam fora: all() de um vetor vazio é TRUE.
+  distancias_reais <- distancia_rodovia_km[pares_reais & !is.na(distancia_rodovia_km)]
+  if (length(distancias_reais) > 0 && all(distancias_reais == 0)) {
+    stop(
+      "osrm::osrmTable() retornou apenas zeros para todos os pares com origem != destino no ",
+      "servidor OSRM usado (\"", osrm_server, "\", perfil \"", osrm_profile, "\"). Verifique se ",
+      "o perfil e' valido para esse servidor ou tente outro servidor.",
+      call. = FALSE
+    )
+  }
 
   razao_desvio <- ifelse(
     dist_linha_reta_km > 0, distancia_rodovia_km / dist_linha_reta_km, 1

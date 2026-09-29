@@ -79,6 +79,19 @@
 #' @noRd
 #' @importFrom sf st_cast st_is_empty st_geometry_type
 .normaliza_linhas <- function(x) {
+  # O recorte ao tile/bbox também pode produzir POINT (via que só toca a borda) ou
+  # GEOMETRYCOLLECTION (linha + ponto) — sem tratar, o cast abaixo falha.
+  x <- x[!sf::st_is_empty(x), ]
+  tipos <- sf::st_geometry_type(x)
+  colecoes <- tipos == "GEOMETRYCOLLECTION"
+  if (any(colecoes)) {
+    x <- rbind(
+      x[!colecoes, ],
+      suppressWarnings(sf::st_collection_extract(x[colecoes, ], "LINESTRING"))
+    )
+    tipos <- sf::st_geometry_type(x)
+  }
+  x <- x[tipos %in% c("LINESTRING", "MULTILINESTRING"), ]
   x <- suppressWarnings(sf::st_cast(sf::st_cast(x, "MULTILINESTRING"), "LINESTRING"))
   x[!sf::st_is_empty(x) & sf::st_geometry_type(x) == "LINESTRING", ]
 }

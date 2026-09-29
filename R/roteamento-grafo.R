@@ -173,6 +173,85 @@
   list(net = net_blend, idx_nos = idx_nos, dist_acesso_m = dist_acesso_m)
 }
 
+#' Opções de acesso a pé de cada ponto a cada componente conexa da rede ao alcance
+#'
+#' @description
+#' Encaixar o ponto só no rio mais próximo falha quando esse rio é um fragmento isolado da
+#' rede (comum no OSM da Amazônia: igarapé que termina num lago sem linha de centro, trecho
+#' sem ligação mapeada) — o ponto fica preso num pedaço que não leva a lugar nenhum, mesmo
+#' com o rio principal a uma caminhada curta. Aqui cada ponto ganha uma opção de acesso por
+#' componente conexa da rede que tenha alguma aresta a até `max_dist_m`: o ponto mais
+#' próximo dessa componente, inserido como nó (\code{.insere_pontos_rede}). Quem roteia
+#' escolhe, por par, a melhor combinação entre componentes comuns à origem e ao destino.
+#'
+#' @param net sfnetwork (retorno de \code{.constroi_rede_hidroviaria}).
+#' @param pontos_m sf (POINT) no mesmo CRS métrico de `net`.
+#' @param max_dist_m Distância máxima (m) de caminhada até a rede.
+#'
+#' @return `list(net, opcoes, dist_min_km, geom_nos)`: a rede com os nós de acesso
+#'   inseridos; `opcoes` (data.frame com `ponto`, `componente`, `no`, `acesso_km`, uma linha
+#'   por ponto x componente ao alcance); a distância (km) de cada ponto à rede mais próxima
+#'   (para diagnóstico quando não há opção); e as geometrias dos nós da rede final.
+#' @keywords internal
+#' @noRd
+.acessos_por_componente <- function(net, pontos_m, max_dist_m) {
+
+  edges <- net |> sfnetworks::activate("edges") |> sf::st_as_sf()
+  componente_no <- igraph::components(net, mode = "weak")$membership
+  componente_aresta <- componente_no[edges$from]
+  geom_arestas <- sf::st_geometry(edges)
+  geom_pontos <- sf::st_geometry(pontos_m)
+
+  vizinhas <- sf::st_is_within_distance(geom_pontos, geom_arestas, dist = max_dist_m)
+
+  opcoes <- list()
+  projecoes <- list()
+  for (k in seq_along(geom_pontos)) {
+    cand <- vizinhas[[k]]
+    if (length(cand) == 0) next
+    d <- as.numeric(sf::st_distance(geom_pontos[k], geom_arestas[cand]))
+    ordem <- order(d)
+    cand <- cand[ordem]
+    d <- d[ordem]
+    primeira <- !duplicated(componente_aresta[cand])
+    for (j in which(primeira)) {
+      proj <- sf::st_cast(sf::st_nearest_points(geom_pontos[k], geom_arestas[cand[j]]), "POINT")[2]
+      projecoes[[length(projecoes) + 1]] <- proj[[1]]
+      opcoes[[length(opcoes) + 1]] <- data.frame(
+        ponto = k, componente = componente_aresta[cand[j]], acesso_km = d[j] / 1000
+      )
+    }
+  }
+
+  dist_min_km <- as.numeric(sf::st_distance(
+    geom_pontos, geom_arestas[sf::st_nearest_feature(geom_pontos, geom_arestas)], by_element = TRUE
+  )) / 1000
+
+  if (length(opcoes) == 0) {
+    return(list(
+      net = net,
+      opcoes = data.frame(ponto = integer(), componente = integer(), no = integer(), acesso_km = numeric()),
+      dist_min_km = dist_min_km,
+      geom_nos = sf::st_geometry(net |> sfnetworks::activate("nodes") |> sf::st_as_sf())
+    ))
+  }
+
+  opcoes <- do.call(rbind, opcoes)
+  pontos_acesso <- sf::st_sf(geometry = sf::st_sfc(projecoes, crs = sf::st_crs(pontos_m)))
+
+  # Os pontos de acesso já estão sobre as arestas: tolerância mínima só para absorver
+  # arredondamento da projeção.
+  blend <- .insere_pontos_rede(net, pontos_acesso, tolerance_m = 1)
+  opcoes$no <- blend$idx_nos
+
+  list(
+    net = blend$net,
+    opcoes = opcoes,
+    dist_min_km = dist_min_km,
+    geom_nos = sf::st_geometry(blend$net |> sfnetworks::activate("nodes") |> sf::st_as_sf())
+  )
+}
+
 #' Grafo `igraph` ponderado por tempo a partir de uma rede hidroviária, com fluxo direcionado
 #'
 #' @description
