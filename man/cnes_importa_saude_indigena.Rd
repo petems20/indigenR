@@ -5,22 +5,21 @@
 \title{Importa os estabelecimentos de saúde indígena do CNES}
 \usage{
 cnes_importa_saude_indigena(
-  competencia = "202607",
-  url = .cnes_url_base(competencia),
+  competencia = NULL,
   tp_unidade = "72",
-  max_tries = 5,
+  cache_dir = tools::R_user_dir("indigenR", "cache"),
   verbose = TRUE
 )
 }
 \arguments{
-\item{competencia}{Competência (mês de referência) da base, string \code{"AAAAMM"}.}
-
-\item{url}{URL do zip. Por padrão montada a partir de \code{competencia}.}
+\item{competencia}{Competência (mês de referência) da base, string \code{"AAAAMM"}.
+Se \code{NULL}, usa a mais recente do cache.}
 
 \item{tp_unidade}{Código(s) de \code{TP_UNIDADE} a manter. Padrão \code{"72"}
 (unidade de atenção à saúde indígena).}
 
-\item{max_tries}{Número máximo de tentativas do download.}
+\item{cache_dir}{Diretório de cache do pacote. Padrão:
+\code{tools::R_user_dir("indigenR", "cache")}.}
 
 \item{verbose}{Se \code{TRUE}, exibe progresso e mensagens de retentativa.}
 }
@@ -37,31 +36,28 @@ Uma lista nomeada com três tibbles (todas as colunas como texto, exceto
   }
 }
 \description{
-Baixa o zip mensal completo da base nacional do CNES (~735MB compactado, ~3GB
-descompactado em ~109 tabelas), extrai apenas \code{tbEstabelecimento},
-\code{rlEstabPoloAldeia} e \code{tbPoloBase}, e filtra os estabelecimentos por
-\code{TP_UNIDADE}. O padrão, \code{"72"}, é "UNIDADE DE ATENCAO A SAUDE INDIGENA"
-(código de \code{tbTipoUnidade<AAAAMM>.csv}, o mesmo usado pelo CnesWeb público) e
-cobre toda a rede SASISUS (DSEI, Polo Base, UBSI, CASAI) — não há subtipo próprio de
-saúde indígena em \code{tbSubTipo}. Testado contra a base de 2026-07: 1.572
-estabelecimentos.
+Lê do cache local do CNES (ver \code{\link{cnes_baixa_base}}) as tabelas
+\code{tbEstabelecimento}, \code{rlEstabPoloAldeia} e \code{tbPoloBase}, e filtra os
+estabelecimentos por \code{TP_UNIDADE}. Se a competência ainda não estiver no cache, a
+base inteira é baixada antes (uma vez só); as chamadas seguintes são locais.
 
-A filtragem é feita via DuckDB diretamente sobre os CSVs (sem carregar o
-\code{tbEstabelecimento} de ~300MB inteiro em R). Arquivo zip e tabelas extraídas
-ficam em diretório temporário e são apagados ao final.
+O padrão de \code{tp_unidade}, \code{"72"}, é "UNIDADE DE ATENCAO A SAUDE INDIGENA"
+(código de \code{tbTipoUnidade}, o mesmo usado pelo CnesWeb público) e cobre toda a
+rede SASISUS (DSEI, Polo Base, UBSI, CASAI) — não há subtipo próprio de saúde indígena
+em \code{tbSubTipo}. Testado contra a base de 2026-07: 1.572 estabelecimentos.
+
+A filtragem é feita via DuckDB diretamente sobre os parquets do cache (sem carregar o
+\code{tbEstabelecimento} inteiro em R).
 }
 \details{
 Particularidades da base:
 \itemize{
   \item \code{tbEstabelecimento} tem duas colunas parecidas: \code{TP_UNIDADE} (a
     correta, populada) e \code{CO_TIPO_UNIDADE} (NULL em todas as linhas testadas).
-  \item Os CSVs vêm em latin-1, não UTF-8.
   \item \code{CO_UNIDADE} de \code{rlEstabPoloAldeia} não é o CNES puro: é
     \code{CO_MUNICIPIO_GESTOR} (6 dígitos) + \code{CO_CNES} (7 dígitos) concatenados
     (não documentado no dicionário oficial). A função devolve só os 7 dígitos finais
     como \code{co_cnes}.
-  \item Não há alias confirmado para "competência mais recente": \code{competencia}
-    precisa ser atualizada manualmente conforme o DATASUS publica novos meses.
 }
 }
 \examples{
@@ -69,4 +65,7 @@ Particularidades da base:
 cnes <- cnes_importa_saude_indigena("202607")
 cnes$estabelecimentos
 }
+}
+\seealso{
+\code{\link{cnes_tabela}} para ler qualquer outra tabela do CNES.
 }

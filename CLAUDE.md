@@ -134,6 +134,18 @@ Business rules:
 - Period: use the smallest time window (3/6/9/12 months) that yields at least 3 valid prices
   (`analisar_item_catmat_completo()`'s `ajuste_periodo` argument).
 
+### CNES — `R/cnes-cache.R`, `R/cnes-importar.R`
+
+Two layers. `R/cnes-cache.R` is the generic layer: `cnes_baixa_base(competencia)` downloads the full
+monthly DATASUS zip (~735MB, ~109 latin-1 `;`-separated CSVs) once, converts every table to
+`<cache_dir>/cnes/<AAAAMM>/<tabela>.parquet` (all columns as text, competência suffix stripped from the
+table name) and deletes the zip/CSVs. A competência only counts as cached once `_tabelas.csv` is
+written; work happens in a `.provisorio_<AAAAMM>` dir that is renamed at the end, so an interrupted
+download never leaves a partial competência. `cnes_tabela()` reads one table (with `colunas`/`filtro`
+pushed down to DuckDB), downloading the competência first if missing; `competencia = NULL` means the
+most recent one in the cache. Thematic readers (`cnes_importa_saude_indigena()`, `R/cnes-importar.R`)
+sit on top and must go through `.cnes_caminho_tabela()` rather than downloading on their own.
+
 ## Conventions
 
 - Use `tidyverse` style (`dplyr`, `tidyr`, `purrr`, `stringr`) for data manipulation.
