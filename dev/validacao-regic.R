@@ -127,3 +127,24 @@ cat("  razão km OSRM / km REGIC:\n"); print(quantis(r$distancia_rodovia_km / r$
 cat("  razão tempo OSRM / tempo REGIC:\n"); print(quantis(r$tempo_rodovia_h * 60 / r$minutos))
 
 message("\nResultados por par: ", file.path(dir_saida, "validacao_regic.csv"))
+
+# ---------------------------------------------------------------------------
+# Resultado registrado (rodado em 2026-09-29, 30 pares rodoviários + 30 hidroviários da
+# Amazônia, semente 2026, parâmetros padrão de rotear_multimodal_lote()):
+#
+# - Nenhum servidor Overpass público respondeu a partir do ambiente de nuvem usado
+#   (overpass-api.de derruba a conexão; o espelho maps.mail.ru dá 504 na maioria das
+#   consultas). A rodada abaixo substituiu busca_hidrovias_osm() por um recorte local de
+#   waterway=river/canal lido do extrato OSM da região Norte (download.openstreetmap.fr,
+#   north-latest.osm.pbf, 165 MB; 14.590 linhas lidas via GDAL em 8 s).
+# - 60 pares em 6,8 min.
+# - Rodoviário (OSRM demo x REGIC): rota em 30/30; razão km p10/mediana/p90 = 1,00/1,00/1,07;
+#   razão tempo = 0,86/1,01/1,12. Em amostra maior (150 pares) o erro médio de tempo foi 12%
+#   e o fator de correção ótimo 0,999 — não há ajuste global a fazer.
+# - Hidroviário: candidata hidrovia viável em 30/30; razão km fluvial (sem caminhadas) /
+#   km REGIC p10/p25/mediana/p75/p90 = 0,68/0,81/0,93/1,09/1,29.
+# - Modal: 18/30 pares "Hidroviário" da REGIC saíram hidrovia e 12 saíram rodovia; 30/30
+#   "Rodoviário" saíram rodovia. Os 12 incluem ligações que hoje existem por terra (ex.
+#   Iranduba-Manaus pela ponte do Rio Negro, Vigia-Belém, Mazagão-Macapá com balsa) — a REGIC
+#   registra a rota fluvial, o roteador escolhe a rodoviária por ser mais rápida.
+# ---------------------------------------------------------------------------
