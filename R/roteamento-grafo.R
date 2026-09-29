@@ -8,17 +8,23 @@
 #' do rascunho original, que descartava os atributos (`osm_id`, direção) ao unir todas as
 #' geometrias numa única `MULTILINESTRING` antes de nodar.
 #'
+#' Antes de montar a rede, as junções são consertadas por \code{.conecta_juncoes()} —
+#' sem isso, costuras entre tiles do cache e afluentes que no OSM terminam a poucos metros
+#' do rio principal viram redes desconectadas.
+#'
 #' @param sf_hidrovias sf (LINESTRING) — waterways, tipicamente de \code{\link{busca_hidrovias_osm}}.
 #' @param crs_metrico Código EPSG métrico para cálculo de comprimento de aresta.
+#' @param tolerancia_juncao_m Ver \code{.conecta_juncoes()}.
 #'
 #' @return Uma \code{sfnetwork} direcionada, subdividida nas interseções, com atributo de
 #'   aresta `comprimento_m`.
 #' @keywords internal
 #' @noRd
-.constroi_rede_hidroviaria <- function(sf_hidrovias, crs_metrico = 5880) {
+.constroi_rede_hidroviaria <- function(sf_hidrovias, crs_metrico = 5880, tolerancia_juncao_m = 50) {
 
   hid_proj <- sf::st_transform(sf_hidrovias, crs_metrico)
   hid_proj <- hid_proj[!sf::st_is_empty(hid_proj), ]
+  hid_proj <- .conecta_juncoes(hid_proj, tolerancia_juncao_m)
 
   net <- sfnetworks::as_sfnetwork(hid_proj, directed = TRUE)
   net <- tidygraph::convert(net, sfnetworks::to_spatial_subdivision, .clean = TRUE)
@@ -26,6 +32,102 @@
   net |>
     sfnetworks::activate("edges") |>
     dplyr::mutate(comprimento_m = as.numeric(sfnetworks::edge_length()))
+}
+
+#' Conserta junções quase-conectadas entre linhas de hidrovia
+#'
+#' @description
+#' A nodagem de \code{.constroi_rede_hidroviaria()} só liga duas linhas quando elas
+#' compartilham um vértice com coordenadas idênticas. Na prática isso falha em dois casos:
+#' \itemize{
+#'   \item \strong{Costura entre tiles}: o cache de \code{\link{busca_hidrovias_osm}} recorta
+#'     cada via na borda do tile, e os dois pedaços podem terminar em coordenadas que diferem
+#'     por arredondamento.
+#'   \item \strong{Afluente solto}: no OSM, é comum um afluente terminar a alguns metros do
+#'     rio principal (ou encostar no meio de um segmento dele sem vértice compartilhado).
+#' }
+#' Em dois passos, preservando a ordem dos vértices (e portanto o sentido de digitalização
+#' usado para jusante/montante):
+#' \enumerate{
+#'   \item Extremidades de linhas a até `tolerancia_m` umas das outras são unificadas numa
+#'     só coordenada.
+#'   \item Cada extremidade que continua sem outra extremidade por perto e fica a até
+#'     `tolerancia_m` do interior de outra linha é estendida até o ponto mais próximo dessa
+#'     linha, e esse ponto é inserido como vértice nela (\code{sf::st_snap()}), para que a
+#'     subdivisão da rede crie o nó de junção.
+#' }
+#'
+#' @param linhas sf (LINESTRING) em CRS métrico.
+#' @param tolerancia_m Distância máxima (m) para considerar duas linhas como conectadas.
+#'   `0` desliga o conserto.
+#'
+#' @return `linhas` com as geometrias ajustadas (mesmas linhas e atributos).
+#' @keywords internal
+#' @noRd
+.conecta_juncoes <- function(linhas, tolerancia_m) {
+
+  if (tolerancia_m <= 0 || nrow(linhas) < 2) return(linhas)
+
+  crs <- sf::st_crs(linhas)
+  coords <- lapply(sf::st_geometry(linhas), function(g) unclass(g)[, 1:2, drop = FALSE])
+  n <- length(coords)
+
+  # Extremidades: 2 por linha (inicio, fim), na ordem linha1-inicio, linha1-fim, linha2-inicio...
+  ext_linha <- rep(seq_len(n), each = 2)
+  ext_fim <- rep(c(FALSE, TRUE), n)
+  ext_xy <- t(vapply(seq_along(ext_linha), function(k) {
+    m <- coords[[ext_linha[k]]]
+    if (ext_fim[k]) m[nrow(m), ] else m[1, ]
+  }, numeric(2)))
+  ext_sf <- sf::st_sfc(lapply(seq_len(nrow(ext_xy)), function(k) sf::st_point(ext_xy[k, ])), crs = crs)
+
+  # Passo 1: unifica extremidades próximas (componentes conexas do grafo "a até tolerancia_m").
+  vizinhos <- sf::st_is_within_distance(ext_sf, ext_sf, dist = tolerancia_m)
+  grupo <- igraph::components(igraph::graph_from_adj_list(unclass(vizinhos), mode = "all"))$membership
+  representante <- match(grupo, grupo)
+  ext_xy <- ext_xy[representante, , drop = FALSE]
+  isolada <- tabulate(grupo)[grupo] == 1
+
+  # Passo 2: extremidades isoladas perto do interior de outra linha.
+  pontos_juncao <- list()
+  linhas_alvo <- integer()
+  if (any(isolada)) {
+    geoms <- sf::st_geometry(linhas)
+    candidatas <- sf::st_is_within_distance(ext_sf[isolada], geoms, dist = tolerancia_m)
+    idx_isoladas <- which(isolada)
+    for (j in seq_along(idx_isoladas)) {
+      k <- idx_isoladas[j]
+      alvos <- setdiff(candidatas[[j]], ext_linha[k])
+      if (length(alvos) == 0) next
+      ponto <- ext_sf[k]
+      alvo <- alvos[which.min(as.numeric(sf::st_distance(ponto, geoms[alvos])))]
+      p_xy <- sf::st_coordinates(sf::st_cast(sf::st_nearest_points(ponto, geoms[alvo]), "POINT"))[2, 1:2]
+      ext_xy[k, ] <- p_xy
+      pontos_juncao[[length(pontos_juncao) + 1]] <- sf::st_point(p_xy)
+      linhas_alvo <- c(linhas_alvo, alvo)
+    }
+  }
+
+  # Reescreve as extremidades de cada linha (estendendo quando a nova extremidade não
+  # coincide com a original, para não deformar o último segmento).
+  novas <- lapply(seq_len(n), function(i) {
+    m <- coords[[i]]
+    ini <- ext_xy[2 * i - 1, ]
+    fim <- ext_xy[2 * i, ]
+    if (!isTRUE(all.equal(ini, m[1, ], check.attributes = FALSE))) m <- rbind(ini, m)
+    if (!isTRUE(all.equal(fim, m[nrow(m), ], check.attributes = FALSE))) m <- rbind(m, fim)
+    sf::st_linestring(unname(m))
+  })
+  novas <- sf::st_sfc(novas, crs = crs)
+
+  if (length(linhas_alvo) > 0) {
+    linhas_alvo <- unique(linhas_alvo)
+    alvo_pts <- sf::st_combine(sf::st_sfc(pontos_juncao, crs = crs))
+    novas[linhas_alvo] <- sf::st_snap(novas[linhas_alvo], alvo_pts, tolerance = 1e-3)
+  }
+
+  sf::st_geometry(linhas) <- novas
+  linhas
 }
 
 #' Insere pontos arbitrários como nós na rede (particionando a aresta mais próxima)
@@ -54,6 +156,12 @@
 
   net_blend <- sfnetworks::st_network_blend(net, pontos_sf, tolerance = tolerance_m)
 
+  # st_network_blend() parte a aresta em duas mas copia os atributos da original para as
+  # duas metades — sem recalcular, cada metade herdaria o comprimento da aresta inteira.
+  net_blend <- net_blend |>
+    sfnetworks::activate("edges") |>
+    dplyr::mutate(comprimento_m = as.numeric(sfnetworks::edge_length()))
+
   nodes_sf <- net_blend |> sfnetworks::activate("nodes") |> sf::st_as_sf()
 
   idx_nos <- sf::st_nearest_feature(pontos_sf, nodes_sf)
@@ -65,14 +173,14 @@
   list(net = net_blend, idx_nos = idx_nos, dist_acesso_m = dist_acesso_m)
 }
 
-#' Caminho mínimo por tempo entre dois nós de uma rede hidroviária, com fluxo direcionado
+#' Grafo `igraph` ponderado por tempo a partir de uma rede hidroviária, com fluxo direcionado
 #'
 #' @description
-#' Constrói um grafo `igraph` direcionado e ponderado por tempo a partir da `sfnetwork`
-#' (já com os pontos de interesse inseridos via \code{.insere_pontos_rede}) e calcula o
-#' caminho mínimo por Dijkstra — o mesmo motor (`igraph::shortest_paths()`) já usado em
-#' `.siorg_classifica_hierarquia()` (`R/siorg-hierarquia.R`) para o grafo organizacional,
-#' mantendo consistência de padrão dentro do pacote.
+#' Constrói uma vez o grafo `igraph` direcionado e ponderado por tempo a partir da
+#' `sfnetwork` (já com os pontos de interesse inseridos via \code{.insere_pontos_rede}),
+#' para ser reaproveitado por várias consultas de caminho mínimo
+#' (\code{.caminhos_hidroviarios}) — no roteamento em lote, o mesmo grafo atende todos os
+#' pares de uma região.
 #'
 #' Quando `direcionar_fluxo = TRUE`, cada aresta original gera duas arestas dirigidas no
 #' grafo: uma no sentido em que o `way` foi digitalizado no OSM (assumido jusante, por
@@ -81,11 +189,113 @@
 #' mesma rede produza tempos diferentes para origem->destino e destino->origem.
 #'
 #' @param net sfnetwork já com os pontos de origem/destino inseridos.
-#' @param no_origem,no_destino Índices de nó (na tabela de nós de `net`) de origem e destino.
 #' @param vel_jusante_kmh,vel_montante_kmh Velocidades (km/h) a favor/contra a correnteza.
 #' @param direcionar_fluxo Se `FALSE`, ignora `vel_montante_kmh` e usa `vel_jusante_kmh` nos
 #'   dois sentidos (grafo efetivamente não-direcionado, igual ao comportamento do rascunho
 #'   original).
+#'
+#' @return `list(g, arestas, geometrias)`: o grafo, a tabela de arestas dirigidas (na ordem
+#'   das arestas de `g`) e as geometrias das arestas originais da rede.
+#' @keywords internal
+#' @noRd
+.grafo_hidroviario <- function(
+    net,
+    vel_jusante_kmh = 20,
+    vel_montante_kmh = 12,
+    direcionar_fluxo = TRUE
+) {
+
+  edges_sf <- net |> sfnetworks::activate("edges") |> sf::st_as_sf()
+  n_nos <- igraph::vcount(net)
+
+  edges_df <- sf::st_drop_geometry(edges_sf)
+
+  vel_inversa <- if (isTRUE(direcionar_fluxo)) vel_montante_kmh else vel_jusante_kmh
+  sentidos <- if (isTRUE(direcionar_fluxo)) c("jusante", "montante") else c("sem_direcao", "sem_direcao")
+
+  arestas <- rbind(
+    data.frame(
+      from = edges_df$from, to = edges_df$to,
+      comprimento_m = edges_df$comprimento_m,
+      peso_h = edges_df$comprimento_m / 1000 / vel_jusante_kmh,
+      edge_idx = seq_len(nrow(edges_df)), sentido = sentidos[1]
+    ),
+    data.frame(
+      from = edges_df$to, to = edges_df$from,
+      comprimento_m = edges_df$comprimento_m,
+      peso_h = edges_df$comprimento_m / 1000 / vel_inversa,
+      edge_idx = seq_len(nrow(edges_df)), sentido = sentidos[2]
+    )
+  )
+
+  g <- igraph::graph_from_data_frame(
+    arestas,
+    directed = TRUE,
+    vertices = data.frame(name = seq_len(n_nos))
+  )
+
+  list(g = g, arestas = arestas, geometrias = sf::st_geometry(edges_sf))
+}
+
+#' Caminhos mínimos por tempo de um nó de origem para vários nós de destino
+#'
+#' @description
+#' Um único Dijkstra (`igraph::shortest_paths()`, o mesmo motor já usado em
+#' `.siorg_classifica_hierarquia()`) resolve todos os destinos de uma origem: o caminho sai
+#' pronto e o tempo é a soma dos pesos. Destino inalcançável vira caminho vazio (com aviso
+#' do igraph, silenciado aqui) e é devolvido como `viavel = FALSE`.
+#'
+#' @param grafo Retorno de \code{.grafo_hidroviario()}.
+#' @param no_origem Índice do nó de origem.
+#' @param nos_destino Índices dos nós de destino.
+#'
+#' @return Lista com um elemento por `nos_destino`, cada um
+#'   `list(viavel, tempo_h, distancia_km, geometry)`.
+#' @keywords internal
+#' @noRd
+.caminhos_hidroviarios <- function(grafo, no_origem, nos_destino) {
+
+  crs <- sf::st_crs(grafo$geometrias)
+  destinos_unicos <- unique(nos_destino)
+
+  caminhos <- suppressWarnings(igraph::shortest_paths(
+    grafo$g,
+    from = as.character(no_origem),
+    to = as.character(destinos_unicos),
+    weights = igraph::E(grafo$g)$peso_h,
+    mode = "out",
+    output = "epath"
+  ))$epath
+
+  resultado <- lapply(seq_along(destinos_unicos), function(j) {
+    edge_ids <- as.integer(caminhos[[j]])
+
+    if (length(edge_ids) == 0) {
+      if (no_origem != destinos_unicos[j]) {
+        return(list(viavel = FALSE, tempo_h = NA_real_, distancia_km = NA_real_, geometry = NULL))
+      }
+      return(list(
+        viavel = TRUE, tempo_h = 0, distancia_km = 0,
+        geometry = sf::st_sfc(sf::st_linestring(), crs = crs)
+      ))
+    }
+
+    trecho <- grafo$arestas[edge_ids, ]
+
+    list(
+      viavel = TRUE,
+      tempo_h = sum(trecho$peso_h),
+      distancia_km = sum(trecho$comprimento_m) / 1000,
+      geometry = sf::st_sfc(sf::st_combine(grafo$geometrias[trecho$edge_idx]), crs = crs)
+    )
+  })
+
+  resultado[match(nos_destino, destinos_unicos)]
+}
+
+#' Caminho mínimo por tempo entre dois nós de uma rede hidroviária, com fluxo direcionado
+#'
+#' Atalho de \code{.grafo_hidroviario()} + \code{.caminhos_hidroviarios()} para um único par.
 #'
 #' @return `list(viavel, tempo_h, distancia_km, geometry)`. `viavel = FALSE` quando os dois
 #'   nós não estão no mesmo componente conectado da rede.
@@ -99,87 +309,8 @@
     vel_montante_kmh = 12,
     direcionar_fluxo = TRUE
 ) {
-
-  edges_sf <- net |> sfnetworks::activate("edges") |> sf::st_as_sf()
-  nodes_sf <- net |> sfnetworks::activate("nodes") |> sf::st_as_sf()
-
-  edges_df <- sf::st_drop_geometry(edges_sf)
-
-  if (isTRUE(direcionar_fluxo)) {
-    arestas <- rbind(
-      data.frame(
-        from = edges_df$from, to = edges_df$to,
-        comprimento_m = edges_df$comprimento_m,
-        peso_h = edges_df$comprimento_m / 1000 / vel_jusante_kmh,
-        edge_idx = seq_len(nrow(edges_df)), sentido = "jusante"
-      ),
-      data.frame(
-        from = edges_df$to, to = edges_df$from,
-        comprimento_m = edges_df$comprimento_m,
-        peso_h = edges_df$comprimento_m / 1000 / vel_montante_kmh,
-        edge_idx = seq_len(nrow(edges_df)), sentido = "montante"
-      )
-    )
-  } else {
-    arestas <- rbind(
-      data.frame(
-        from = edges_df$from, to = edges_df$to,
-        comprimento_m = edges_df$comprimento_m,
-        peso_h = edges_df$comprimento_m / 1000 / vel_jusante_kmh,
-        edge_idx = seq_len(nrow(edges_df)), sentido = "sem_direcao"
-      ),
-      data.frame(
-        from = edges_df$to, to = edges_df$from,
-        comprimento_m = edges_df$comprimento_m,
-        peso_h = edges_df$comprimento_m / 1000 / vel_jusante_kmh,
-        edge_idx = seq_len(nrow(edges_df)), sentido = "sem_direcao"
-      )
-    )
-  }
-
-  g <- igraph::graph_from_data_frame(
-    arestas,
-    directed = TRUE,
-    vertices = data.frame(name = seq_len(nrow(nodes_sf)))
-  )
-
-  dist <- igraph::distances(
-    g,
-    v = as.character(no_origem),
-    to = as.character(no_destino),
-    weights = igraph::E(g)$peso_h,
-    mode = "out"
-  )[1, 1]
-
-  if (!is.finite(dist)) {
-    return(list(viavel = FALSE, tempo_h = NA_real_, distancia_km = NA_real_, geometry = NULL))
-  }
-
-  caminho <- igraph::shortest_paths(
-    g,
-    from = as.character(no_origem),
-    to = as.character(no_destino),
-    weights = igraph::E(g)$peso_h,
-    mode = "out",
-    output = "epath"
-  )
-
-  edge_ids <- as.integer(caminho$epath[[1]])
-
-  if (length(edge_ids) == 0) {
-    return(list(viavel = TRUE, tempo_h = dist, distancia_km = 0, geometry = sf::st_sfc(crs = sf::st_crs(edges_sf))))
-  }
-
-  trecho <- arestas[edge_ids, ]
-
-  geom <- sf::st_combine(sf::st_geometry(edges_sf)[trecho$edge_idx])
-
-  list(
-    viavel = TRUE,
-    tempo_h = sum(trecho$peso_h),
-    distancia_km = sum(trecho$comprimento_m) / 1000,
-    geometry = sf::st_sfc(geom, crs = sf::st_crs(edges_sf))
-  )
+  grafo <- .grafo_hidroviario(net, vel_jusante_kmh, vel_montante_kmh, direcionar_fluxo)
+  .caminhos_hidroviarios(grafo, no_origem, no_destino)[[1]]
 }
 
 #' Valida (e opcionalmente corrige) o sentido de digitalização de `ways` por elevação

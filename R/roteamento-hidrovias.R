@@ -216,7 +216,12 @@ busca_hidrovias_osm <- function(
     if (nrow(cache_hit) == 1 && cache_hit$criado_em[[1]] >= idade_limite) {
 
       if (verbose) message("Tile ", tile_id, ": cache.")
-      lista[[i]] <- unserialize(cache_hit$sf_blob[[1]])
+      # Recorta de novo ao tile: tiles gravados por versões antigas desta função guardavam a
+      # via inteira devolvida pelo Overpass. Para tiles já recortados, é idempotente.
+      lista[[i]] <- suppressWarnings(sf::st_crop(
+        unserialize(cache_hit$sf_blob[[1]]),
+        .bbox_nomeado(c(tb$xmin, tb$ymin, tb$xmax, tb$ymax))
+      ))
       next
     }
 
@@ -251,7 +256,11 @@ busca_hidrovias_osm <- function(
     return(combinado)
   }
 
-  combinado <- combinado[!duplicated(combinado$osm_id), ]
+  # Cada tile só contém o pedaço de cada via que cai dentro dele, então uma via que cruza a
+  # fronteira entre tiles aparece em vários tiles com o mesmo `osm_id` e pedaços diferentes —
+  # deduplicar por `osm_id` descartaria todos menos o primeiro e cortaria o rio a cada fronteira.
+  # Só geometrias idênticas (ex. via que corre exatamente sobre a borda do tile) são duplicatas.
+  combinado <- combinado[!duplicated(sf::st_as_binary(sf::st_geometry(combinado))), ]
 
   .normaliza_linhas(suppressWarnings(
     sf::st_crop(combinado, .bbox_nomeado(bbox))

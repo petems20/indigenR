@@ -134,6 +134,22 @@ Business rules:
 - Period: use the smallest time window (3/6/9/12 months) that yields at least 3 valid prices
   (`analisar_item_catmat_completo()`'s `ajuste_periodo` argument).
 
+### Multimodal routing — `R/roteamento-multimodal.R`, `R/roteamento-grafo.R`, `R/roteamento-hidrovias.R`
+
+One engine, `.rotear_pares()`, serves `rotear_multimodal()` (1 pair, per-leg output),
+`rotear_multimodal_lote()` (many pairs, 1 row per pair) and `rotear_mais_proximo()` (k nearest
+candidates by straight line, ranked by travel time). Per pair it builds two candidates and keeps the
+faster: **rodovia** (one `osrmTable` per block of `max_pares` via `triagem_rodovia_lote()`, snap/detour
+critique in `.motivo_rodovia()`, `osrmRoute` only when geometry is requested) and **hidrovia +
+caminhada** (`.hidrovia_pares()`: nearby pairs share one network per group, one Dijkstra per distinct
+origin via `.caminhos_hidroviarios()`; pairs that come out disconnected are retried with the search
+margin doubled up to `bbox_buffer_max_km`). Discard reasons are returned per pair, not only messaged.
+Graph invariants worth keeping: `.conecta_juncoes()` repairs near-miss junctions before noding (tile
+seams, loose tributaries) while preserving vertex order (= flow direction); edge lengths must be
+recomputed after `st_network_blend()` (it copies attributes to both halves of a split edge); the
+Overpass tile cache must never be deduplicated by `osm_id` (a way crossing tiles has one piece per tile).
+All OSRM calls go through `.osrm_com_retry()`.
+
 ### CNES — `R/cnes-cache.R`, `R/cnes-importar.R`
 
 Two layers. `R/cnes-cache.R` is the generic layer: `cnes_baixa_base(competencia)` downloads the full

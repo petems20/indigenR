@@ -12,7 +12,8 @@ triagem_rodovia_lote(
   max_snap_osrm_km = 5,
   max_ratio_desvio = 3,
   max_pares = 50,
-  verbose = TRUE
+  verbose = TRUE,
+  max_tries = 5
 )
 }
 \arguments{
@@ -24,16 +25,18 @@ triagem_rodovia_lote(
 \item{max_snap_osrm_km, max_ratio_desvio}{Mesmos limiares/padrões usados pela candidata
 rodovia de `rotear_multimodal()` — ver `\link{rotear_multimodal}`.}
 
-\item{max_pares}{Número máximo de pares por chamada. Origens e destinos são consultados
-juntos numa única chamada `osrm::osrmTable(loc = ...)` (não `src`/`dst` separados — alguns
-servidores, incluindo o público `router.project-osrm.org`, retornam uma matriz de zeros em
-vez de erro quando `src`/`dst` são passados como conjuntos separados), o que gera uma
-matriz `2n x 2n`, custo O(4n²); o servidor público de demonstração do OSRM não aceita mais
-de 10000 valores por requisição, daí o padrão de 50 pares (`(2*50)² = 10000`). Para lotes
-maiores, aponte `osrm_server` para uma instância própria e aumente `max_pares` de acordo
-com o `max-table-size` configurado nela.}
+\item{max_pares}{Número máximo de pares por chamada; lotes maiores são divididos em
+blocos automaticamente. Origens e destinos são consultados juntos numa única chamada
+`osrm::osrmTable(loc = ...)` (não `src`/`dst` separados — alguns servidores, incluindo o
+público `router.project-osrm.org`, retornam uma matriz de zeros em vez de erro quando
+`src`/`dst` são passados como conjuntos separados), o que gera uma matriz `2n x 2n`,
+custo O(4n²); o servidor público de demonstração do OSRM não aceita mais de 10000
+valores por requisição, daí o padrão de 50 pares (`(2*50)² = 10000`). Com uma instância
+própria, aumente `max_pares` de acordo com o `max-table-size` configurado nela.}
 
 \item{verbose}{Se `TRUE` (padrão), exibe mensagens de progresso.}
+
+\item{max_tries}{Número máximo de tentativas de cada chamada ao OSRM.}
 }
 \value{
 Um `tibble`, 1 linha por par, com `par` (índice), `tempo_rodovia_h`,
@@ -44,18 +47,16 @@ Um `tibble`, 1 linha por par, com `par` (índice), `tempo_rodovia_h`,
 }
 \description{
 Pré-filtro barato para lotes de roteamento: em vez de checar cada par origem-destino com
-as chamadas não vetorizadas que `rotear_multimodal()` usa por trás (`osrm::osrmNearest()` e
-`osrm::osrmRoute()`, uma requisição HTTP cada), consulta `osrm::osrmTable()` **uma única
-vez** para o lote inteiro — a API de tabela do OSRM é genuinamente vetorizada — e aplica a
-mesma crítica que `rotear_multimodal()` já usa para descartar uma rota rodoviária
-implausível (distância de encaixe/*snap* e razão de desvio, ver `max_snap_osrm_km`/
-`max_ratio_desvio`). O resultado marca, para cada par, se a rota rodoviária já é plausível
-ou se o par é candidato ao roteamento multimodal completo (caro: `osrm::osrmRoute()` +
-busca de hidrovia via Overpass/`sfnetworks`/`igraph`, uma chamada por par).
+chamadas não vetorizadas (`osrm::osrmNearest()`/`osrm::osrmRoute()`, uma requisição HTTP
+cada), consulta `osrm::osrmTable()` **uma única vez por bloco** de `max_pares` pares — a
+API de tabela do OSRM é genuinamente vetorizada — e aplica a crítica que
+`rotear_multimodal()` usa para descartar uma rota rodoviária implausível (distância de
+encaixe/*snap* e razão de desvio, ver `max_snap_osrm_km`/`max_ratio_desvio`). O resultado
+marca, para cada par, se a rota rodoviária já é plausível ou se o par é candidato ao
+roteamento multimodal completo.
 
-Não chama `rotear_multimodal()` para os pares flagados — essa orquestração (rodar o
-roteamento completo só para os candidatos, e obter a geometria da rota rodoviária via
-`osrm::osrmRoute()` para os demais) fica para uma etapa seguinte.
+Para rotear os pares de fato (inclusive a candidata hidrovia), use
+\code{\link{rotear_multimodal_lote}}, que usa esta triagem internamente.
 }
 \examples{
 \dontrun{
