@@ -143,7 +143,13 @@ faster: **rodovia** (one `osrmTable` per block of `max_pares` via `triagem_rodov
 critique in `.motivo_rodovia()`, `osrmRoute` only when geometry is requested) and **hidrovia +
 caminhada** (`.hidrovia_pares()`: nearby pairs share one network per group, one Dijkstra per distinct
 origin via `.caminhos_hidroviarios()`; pairs that come out disconnected are retried with the search
-margin doubled up to `bbox_buffer_max_km`). Discard reasons are returned per pair, not only messaged.
+margin doubled up to `bbox_buffer_max_km`). Points are not snapped to the single nearest river:
+`.acessos_por_componente()` gives each point one walking access per connected component within
+`max_caminhada_km`, and each pair takes the fastest combination inside a shared component — OSM in
+the Amazon has many isolated fragments (streams ending in lakes) that are often the nearest line.
+Discard reasons are returned per pair, not only messaged. `dev/validacao-regic.R` validates against
+IBGE's REGIC 2018 routes (note: REGIC river times are modelled at a flat 20 km/h, so they validate
+distances/connectivity/mode choice, not boat speeds).
 Graph invariants worth keeping: `.conecta_juncoes()` repairs near-miss junctions before noding (tile
 seams, loose tributaries) while preserving vertex order (= flow direction); edge lengths must be
 recomputed after `st_network_blend()` (it copies attributes to both halves of a split edge); the
