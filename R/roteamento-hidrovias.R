@@ -166,9 +166,13 @@
   )
 }
 
-#' Waterways do OpenStreetMap para uma área, via Overpass, com cache local em DuckDB
+#' Waterways do OpenStreetMap para uma área, de base local ou do Overpass (com cache)
 #'
 #' @description
+#' Se houver no cache uma base local que cubra a área (ver \code{\link{hidrovias_baixa_base}}),
+#' as waterways vêm dela, em segundos — é a forma recomendada, porque os servidores públicos
+#' do Overpass costumam ser lentos e instáveis. Sem base local, a busca é feita no Overpass:
+#'
 #' Baixa `waterway=river/canal/...` do Overpass API (via \pkg{osmdata}) para o bbox informado,
 #' substituindo fontes locais estáticas (ex. `targets::tar_read(mapa_hidrovias)`). A consulta é
 #' dividida em tiles de tamanho fixo (`tile_deg`) e cada tile é cacheado individualmente em um
@@ -184,6 +188,10 @@
 #' @param timeout_overpass Timeout (segundos) repassado à consulta Overpass.
 #' @param max_tries Máximo de tentativas por tile em caso de erro.
 #' @param verbose Se `TRUE`, imprime mensagens de progresso.
+#' @param fonte De onde vêm as waterways: `"auto"` (padrão) usa as bases locais baixadas com
+#'   \code{\link{hidrovias_baixa_base}} quando alguma cobre `bbox` e tem os `tipos` pedidos,
+#'   e o Overpass caso contrário; `"local"` exige base local (erro se não houver);
+#'   `"overpass"` ignora as bases locais.
 #'
 #' @return Objeto `sf` (LINESTRING, EPSG:4326) com as waterways da área, colunas
 #'   `osm_id`, `waterway`, `name`, `width`, `boat`, `motorboat`, `draft`. A geometria é sempre
@@ -201,8 +209,27 @@ busca_hidrovias_osm <- function(
     cache_max_age_dias = 30,
     timeout_overpass = 120,
     max_tries = 5,
-    verbose = TRUE
+    verbose = TRUE,
+    fonte = c("auto", "local", "overpass")
 ) {
+
+  fonte <- match.arg(fonte)
+
+  if (fonte != "overpass") {
+    locais <- .hidrovias_locais(bbox, tipos, cache_dir)
+    if (!is.null(locais)) {
+      if (verbose) message("Hidrovias: base local do cache (", nrow(locais), " linhas na area).")
+      return(locais)
+    }
+    if (fonte == "local") {
+      stop(
+        "Nenhuma base local de hidrovias no cache cobre a area pedida com os tipos ",
+        paste(tipos, collapse = ", "), ". Baixe uma com hidrovias_baixa_base() ",
+        "(ex. hidrovias_baixa_base(\"north\")).",
+        call. = FALSE
+      )
+    }
+  }
 
   tipos_key <- paste(sort(tipos), collapse = "+")
 

@@ -28,14 +28,14 @@ url_regic <- paste0(
 )
 ufs_amazonia <- c("AM", "PA", "AC", "RR", "AP", "RO")
 n_por_modal <- c(Rodoviário = 30, Hidroviário = 30)
-km_max_hidro <- 300          # pares fluviais mais longos custam muitos tiles do Overpass
+km_max_hidro <- 300
 semente <- 2026
-# O overpass-api.de principal tem derrubado conexões de ambientes em nuvem; o espelho abaixo
-# responde (lento, com 504 ocasionais — a retentativa de busca_hidrovias_osm() cobre).
-overpass_url <- "https://maps.mail.ru/osm/tools/overpass/api/interpreter"
 
 dir.create(dir_saida, recursive = TRUE, showWarnings = FALSE)
-osmdata::set_overpass_url(overpass_url)
+
+# Hidrovias da base local (extrato OSM da região Norte), não do Overpass: os servidores
+# públicos do Overpass não davam conta desta validação (ver resultado registrado no fim).
+hidrovias_baixa_base("north")
 
 # ---------------------------------------------------------------------------
 # 1. Rotas da REGIC na Amazônia, com coordenadas de origem/destino
@@ -92,6 +92,7 @@ t0 <- Sys.time()
 lote <- rotear_multimodal_lote(
   origens = as.matrix(amostra[, c("lon_o", "lat_o")]),
   destinos = as.matrix(amostra[, c("lon_d", "lat_d")]),
+  fonte_hidrovias = "local",
   verbose = TRUE
 )
 duracao_min <- as.numeric(Sys.time() - t0, units = "mins")
@@ -134,9 +135,9 @@ message("\nResultados por par: ", file.path(dir_saida, "validacao_regic.csv"))
 #
 # - Nenhum servidor Overpass público respondeu a partir do ambiente de nuvem usado
 #   (overpass-api.de derruba a conexão; o espelho maps.mail.ru dá 504 na maioria das
-#   consultas). A rodada abaixo substituiu busca_hidrovias_osm() por um recorte local de
-#   waterway=river/canal lido do extrato OSM da região Norte (download.openstreetmap.fr,
-#   north-latest.osm.pbf, 165 MB; 14.590 linhas lidas via GDAL em 8 s).
+#   consultas). A rodada usou um recorte local de waterway=river/canal lido do extrato OSM
+#   da região Norte (download.openstreetmap.fr, north-latest.osm.pbf, 165 MB; 14.590 linhas)
+#   — o que depois virou hidrovias_baixa_base("north"), usada acima.
 # - 60 pares em 6,8 min.
 # - Rodoviário (OSRM demo x REGIC): rota em 30/30; razão km p10/mediana/p90 = 1,00/1,00/1,07;
 #   razão tempo = 0,86/1,01/1,12. Em amostra maior (150 pares) o erro médio de tempo foi 12%

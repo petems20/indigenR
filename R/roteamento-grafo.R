@@ -1,3 +1,19 @@
+#' Silencia o aviso "assumes attributes are constant over geometries" do sfnetworks
+#'
+#' O aviso sai a cada subdivisão/inserção de pontos na rede e não se aplica aqui: os
+#' atributos das linhas (nome, tipo) valem para a via inteira, e o comprimento é recalculado
+#' depois. Num lote, ele se repetia dezenas de vezes. Outros avisos passam normalmente.
+#'
+#' @keywords internal
+#' @noRd
+.sem_aviso_atributos <- function(expr) {
+  withCallingHandlers(expr, warning = function(w) {
+    if (grepl("assumes attributes are constant", conditionMessage(w), fixed = TRUE)) {
+      invokeRestart("muffleWarning")
+    }
+  })
+}
+
 #' Constrói a rede navegável a partir de linhas de hidrovia (nodagem preservando direção)
 #'
 #' @description
@@ -27,7 +43,7 @@
   hid_proj <- .conecta_juncoes(hid_proj, tolerancia_juncao_m)
 
   net <- sfnetworks::as_sfnetwork(hid_proj, directed = TRUE)
-  net <- tidygraph::convert(net, sfnetworks::to_spatial_subdivision, .clean = TRUE)
+  net <- .sem_aviso_atributos(tidygraph::convert(net, sfnetworks::to_spatial_subdivision, .clean = TRUE))
 
   net |>
     sfnetworks::activate("edges") |>
@@ -154,7 +170,7 @@
 #' @noRd
 .insere_pontos_rede <- function(net, pontos_sf, tolerance_m) {
 
-  net_blend <- sfnetworks::st_network_blend(net, pontos_sf, tolerance = tolerance_m)
+  net_blend <- .sem_aviso_atributos(sfnetworks::st_network_blend(net, pontos_sf, tolerance = tolerance_m))
 
   # st_network_blend() parte a aresta em duas mas copia os atributos da original para as
   # duas metades — sem recalcular, cada metade herdaria o comprimento da aresta inteira.

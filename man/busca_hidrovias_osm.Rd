@@ -2,7 +2,7 @@
 % Please edit documentation in R/roteamento-hidrovias.R
 \name{busca_hidrovias_osm}
 \alias{busca_hidrovias_osm}
-\title{Waterways do OpenStreetMap para uma área, via Overpass, com cache local em DuckDB}
+\title{Waterways do OpenStreetMap para uma área, de base local ou do Overpass (com cache)}
 \usage{
 busca_hidrovias_osm(
   bbox,
@@ -12,7 +12,8 @@ busca_hidrovias_osm(
   cache_max_age_dias = 30,
   timeout_overpass = 120,
   max_tries = 5,
-  verbose = TRUE
+  verbose = TRUE,
+  fonte = c("auto", "local", "overpass")
 )
 }
 \arguments{
@@ -31,6 +32,11 @@ busca_hidrovias_osm(
 \item{max_tries}{Máximo de tentativas por tile em caso de erro.}
 
 \item{verbose}{Se `TRUE`, imprime mensagens de progresso.}
+
+\item{fonte}{De onde vêm as waterways: `"auto"` (padrão) usa as bases locais baixadas com
+\code{\link{hidrovias_baixa_base}} quando alguma cobre `bbox` e tem os `tipos` pedidos,
+e o Overpass caso contrário; `"local"` exige base local (erro se não houver);
+`"overpass"` ignora as bases locais.}
 }
 \value{
 Objeto `sf` (LINESTRING, EPSG:4326) com as waterways da área, colunas
@@ -40,6 +46,10 @@ Objeto `sf` (LINESTRING, EPSG:4326) com as waterways da área, colunas
   dos dados vem de um tile já cacheado de uma versão anterior desta função.
 }
 \description{
+Se houver no cache uma base local que cubra a área (ver \code{\link{hidrovias_baixa_base}}),
+as waterways vêm dela, em segundos — é a forma recomendada, porque os servidores públicos
+do Overpass costumam ser lentos e instáveis. Sem base local, a busca é feita no Overpass:
+
 Baixa `waterway=river/canal/...` do Overpass API (via \pkg{osmdata}) para o bbox informado,
 substituindo fontes locais estáticas (ex. `targets::tar_read(mapa_hidrovias)`). A consulta é
 dividida em tiles de tamanho fixo (`tile_deg`) e cada tile é cacheado individualmente em um

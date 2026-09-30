@@ -305,7 +305,7 @@
 .hidrovia_grupo <- function(
     origens_4326, destinos_4326, buffer_km, tipos_hidrovia, crs_metrico, tolerancia_juncao_m,
     vel_jusante_kmh, vel_montante_kmh, vel_caminhada_kmh, max_caminhada_km, direcionar_fluxo,
-    cache_dir, cache_max_age_dias, verbose
+    cache_dir, cache_max_age_dias, verbose, fonte_hidrovias = "auto"
 ) {
 
   n <- nrow(origens_4326)
@@ -337,7 +337,8 @@
     tipos = tipos_hidrovia,
     cache_dir = cache_dir,
     cache_max_age_dias = cache_max_age_dias,
-    verbose = verbose
+    verbose = verbose,
+    fonte = fonte_hidrovias
   )
 
   if (is.null(sf_hid) || nrow(sf_hid) == 0) {
@@ -436,7 +437,8 @@
 .hidrovia_pares <- function(
     origens, destinos, tipos_hidrovia, bbox_buffer_km, bbox_buffer_max_km, crs_metrico,
     tolerancia_juncao_m, vel_jusante_kmh, vel_montante_kmh, vel_caminhada_kmh,
-    max_caminhada_km, direcionar_fluxo, cache_dir, cache_max_age_dias, verbose
+    max_caminhada_km, direcionar_fluxo, cache_dir, cache_max_age_dias, verbose,
+    fonte_hidrovias = "auto"
 ) {
 
   origens_4326 <- sf::st_transform(origens, 4326)
@@ -472,7 +474,8 @@
         .hidrovia_grupo(
           origens_4326[idx, ], destinos_4326[idx, ], margem, tipos_hidrovia, crs_metrico,
           tolerancia_juncao_m, vel_jusante_kmh, vel_montante_kmh, vel_caminhada_kmh,
-          max_caminhada_km, direcionar_fluxo, cache_dir, cache_max_age_dias, verbose
+          max_caminhada_km, direcionar_fluxo, cache_dir, cache_max_age_dias, verbose,
+          fonte_hidrovias
         ),
         error = function(e) {
           rep(list(list(
@@ -517,7 +520,7 @@
     origens, destinos, p$tipos_hidrovia, p$bbox_buffer_km, p$bbox_buffer_max_km, p$crs_metrico,
     p$tolerancia_juncao_m, p$vel_hidrovia_jusante_kmh, p$vel_hidrovia_montante_kmh,
     p$vel_caminhada_kmh, p$max_caminhada_km, p$direcionar_fluxo,
-    p$cache_dir, p$cache_max_age_dias, p$verbose
+    p$cache_dir, p$cache_max_age_dias, p$verbose, p$fonte_hidrovias
   )
 
   lapply(seq_len(n), function(i) list(rodovia = rodovia[[i]], hidrovia = hidrovia[[i]]))
@@ -650,6 +653,10 @@
 #' @param crs_metrico Código EPSG métrico usado internamente para cálculo de distâncias/grafo.
 #' @param cache_dir Diretório do cache local (Overpass) em DuckDB.
 #' @param cache_max_age_dias Idade máxima (dias) de dados em cache antes de rebuscar.
+#' @param fonte_hidrovias De onde vêm as waterways — ver `fonte` em
+#'   \code{\link{busca_hidrovias_osm}}. Com o padrão `"auto"`, uma base local baixada com
+#'   \code{\link{hidrovias_baixa_base}} é usada quando cobre a área (recomendado: o Overpass
+#'   público é lento e instável).
 #' @param max_tries Número máximo de tentativas de cada chamada ao OSRM.
 #' @param verbose Se `TRUE`, imprime mensagens de progresso e de descarte de candidatas.
 #'
@@ -680,12 +687,14 @@ rotear_multimodal <- function(
     crs_metrico = 5880,
     cache_dir = tools::R_user_dir("indigenR", "cache"),
     cache_max_age_dias = 30,
+    fonte_hidrovias = c("auto", "local", "overpass"),
     max_tries = 5,
     verbose = TRUE
 ) {
 
   origem <- .padroniza_ponto(origem)
   destino <- .padroniza_ponto(destino)
+  fonte_hidrovias <- match.arg(fonte_hidrovias)
 
   parametros <- mget(setdiff(names(formals()), c("origem", "destino")))
   parametros$max_pares <- 50
@@ -778,6 +787,7 @@ rotear_multimodal_lote <- function(
     crs_metrico = 5880,
     cache_dir = tools::R_user_dir("indigenR", "cache"),
     cache_max_age_dias = 30,
+    fonte_hidrovias = c("auto", "local", "overpass"),
     max_pares = 50,
     max_tries = 5,
     geometria = FALSE,
@@ -790,6 +800,7 @@ rotear_multimodal_lote <- function(
   if (nrow(origens) != nrow(destinos)) {
     stop("`origens` e `destinos` devem ter o mesmo numero de pares.", call. = FALSE)
   }
+  fonte_hidrovias <- match.arg(fonte_hidrovias)
 
   parametros <- mget(setdiff(names(formals()), c("origens", "destinos", "geometria")))
 
@@ -855,6 +866,7 @@ rotear_mais_proximo <- function(
     crs_metrico = 5880,
     cache_dir = tools::R_user_dir("indigenR", "cache"),
     cache_max_age_dias = 30,
+    fonte_hidrovias = c("auto", "local", "overpass"),
     max_pares = 50,
     max_tries = 5,
     geometria = TRUE,
@@ -862,6 +874,7 @@ rotear_mais_proximo <- function(
 ) {
 
   origem <- .padroniza_ponto(origem)
+  fonte_hidrovias <- match.arg(fonte_hidrovias)
   atributos <- if (inherits(candidatos, "sf")) sf::st_drop_geometry(candidatos) else NULL
   pontos <- .padroniza_pontos(candidatos)
 

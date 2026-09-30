@@ -150,6 +150,13 @@ the Amazon has many isolated fragments (streams ending in lakes) that are often 
 Discard reasons are returned per pair, not only messaged. `dev/validacao-regic.R` validates against
 IBGE's REGIC 2018 routes (note: REGIC river times are modelled at a flat 20 km/h, so they validate
 distances/connectivity/mode choice, not boat speeds).
+Waterways come from `busca_hidrovias_osm(fonte = "auto")`: a local base when one covers the area,
+else Overpass. Local bases (`R/roteamento-hidrovias-local.R`) follow the CNES cache pattern:
+`hidrovias_baixa_base("north")` downloads the OpenStreetMap France `.osm.pbf` extract once, extracts
+`waterway` lines via GDAL's OSM driver into `<cache_dir>/hidrovias/<regiao>.gpkg` (spatial index,
+bbox reads via `wkt_filter`), and only registers it once `<regiao>.csv` (metadata incl. extent and
+`tipos`) is written. Prefer local bases: public Overpass servers were too slow/unreliable to route
+even one pair (28 min, many 504s) from a cloud container, while the local North base serves it in ~2 s.
 Graph invariants worth keeping: `.conecta_juncoes()` repairs near-miss junctions before noding (tile
 seams, loose tributaries) while preserving vertex order (= flow direction); edge lengths must be
 recomputed after `st_network_blend()` (it copies attributes to both halves of a split edge); the

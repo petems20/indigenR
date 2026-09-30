@@ -23,6 +23,7 @@ rotear_multimodal(
   crs_metrico = 5880,
   cache_dir = tools::R_user_dir("indigenR", "cache"),
   cache_max_age_dias = 30,
+  fonte_hidrovias = c("auto", "local", "overpass"),
   max_tries = 5,
   verbose = TRUE
 )
@@ -77,6 +78,11 @@ encontram. `0` desliga o conserto.}
 \item{cache_dir}{Diretório do cache local (Overpass) em DuckDB.}
 
 \item{cache_max_age_dias}{Idade máxima (dias) de dados em cache antes de rebuscar.}
+
+\item{fonte_hidrovias}{De onde vêm as waterways — ver `fonte` em
+\code{\link{busca_hidrovias_osm}}. Com o padrão `"auto"`, uma base local baixada com
+\code{\link{hidrovias_baixa_base}} é usada quando cobre a área (recomendado: o Overpass
+público é lento e instável).}
 
 \item{max_tries}{Número máximo de tentativas de cada chamada ao OSRM.}
 
