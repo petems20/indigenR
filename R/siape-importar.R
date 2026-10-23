@@ -278,6 +278,181 @@
   df
 }
 
+#' Baixa, extrai e lê múltiplos arquivos de um anomês do SIAPE (Cadastro,
+#' Afastamentos, Remuneração, Observações), com uma única retentativa de download —
+#' o zip mensal traz os 4 arquivos juntos, então baixar uma vez só e ler os que
+#' forem pedidos evita repetir o download (~80MB) por arquivo. Mantida separada de
+#' \code{.siape_baixa_extrai_le()} (não a reaproveita) para não arriscar o
+#' comportamento já validado dessa função, usada em produção.
+#'
+#' @param arquivos Vetor com os nomes-base dos arquivos a ler (sem `.csv`) — algum
+#'   subconjunto de `c("Cadastro", "Afastamentos", "Remuneracao", "Observacoes")`.
+#'   Ao contrário de `.siape_baixa_extrai_le()` (que renomeia as colunas do Cadastro
+#'   para nomes amigáveis), aqui cada arquivo é devolvido com as colunas ORIGINAIS
+#'   do Portal da Transparência (ex.: `Id_SERVIDOR_PORTAL`, `"REMUNERAÇÃO BÁSICA
+#'   BRUTA (R$)"`) — a limpeza/renomeação fica a cargo de quem consome.
+#'
+#' @return Lista nomeada de tibbles, uma por arquivo pedido (todas as colunas como
+#'   `character`, mesmo padrão de `.siape_baixa_extrai_le()`).
+#'
+#' @keywords internal
+#' @noRd
+#' @importFrom httr GET status_code timeout write_disk
+#' @importFrom readr read_delim locale cols
+.siape_baixa_extrai_completo <- function(anomes, arquivos = c("Cadastro", "Afastamentos", "Remuneracao"),
+                                          max_tries = 5, verbose = TRUE) {
+
+  url <- paste0(
+    "https://portaldatransparencia.gov.br/download-de-dados/servidores/",
+    anomes, "_Servidores_SIAPE"
+  )
+
+  zip_path <- tempfile(fileext = ".zip")
+  on.exit(unlink(zip_path), add = TRUE)
+
+  extract_dir <- tempfile()
+  dir.create(extract_dir)
+  on.exit(unlink(extract_dir, recursive = TRUE), add = TRUE)
+
+  tentativa <- 1
+
+  repeat {
+
+    if (verbose) message("Baixando dados do SIAPE (anomês ", anomes, ")...")
+
+    resp <- tryCatch(
+      httr::GET(url, httr::timeout(60), httr::write_disk(zip_path, overwrite = TRUE)),
+      error = function(e) e
+    )
+
+    if (inherits(resp, "error")) {
+      if (tentativa >= max_tries) {
+        stop(
+          "Falha de conexão ao baixar o anomês ", anomes, " após ",
+          tentativa, " tentativas.\n", resp$message,
+          call. = FALSE
+        )
+      }
+      wait_time <- 2 ^ (tentativa - 1)
+      if (verbose) message("Erro de conexão. Nova tentativa em ", wait_time, " segundos...")
+      Sys.sleep(wait_time)
+      tentativa <- tentativa + 1
+      next
+    }
+
+    sc <- httr::status_code(resp)
+
+    if (sc >= 400) {
+      if (tentativa >= max_tries) {
+        stop(
+          "Erro HTTP ", sc, " ao baixar o anomês ", anomes, " após ",
+          tentativa, " tentativas.",
+          call. = FALSE
+        )
+      }
+      wait_time <- 2 ^ (tentativa - 1)
+      if (verbose) message("Erro HTTP ", sc, ". Nova tentativa em ", wait_time, " segundos...")
+      Sys.sleep(wait_time)
+      tentativa <- tentativa + 1
+      next
+    }
+
+    break
+  }
+
+  if (verbose) message("Download concluído. Extraindo arquivos...")
+  unzip(zip_path, exdir = extract_dir)
+
+  ler_arquivo <- function(nome) {
+    csv_file <- list.files(
+      extract_dir, pattern = paste0(nome, "\\.csv$"), full.names = TRUE, recursive = TRUE
+    )
+    if (length(csv_file) == 0) {
+      stop("Arquivo '", nome, ".csv' não encontrado no ZIP do anomês ", anomes, ".", call. = FALSE)
+    }
+    if (length(csv_file) > 1) csv_file <- csv_file[1]
+    if (verbose) message("Lendo ", nome, ".csv...")
+    readr::read_delim(
+      csv_file,
+      delim = ";",
+      locale = readr::locale(encoding = "latin1"),
+      col_types = readr::cols(.default = "c"),
+      show_col_types = FALSE
+    )
+  }
+
+  stats::setNames(lapply(arquivos, ler_arquivo), arquivos)
+}
+
+#' Importa Cadastro, Afastamentos e Remuneração do SIAPE para a Funai, num único
+#' download
+#'
+#' Complementa \code{\link{funai_importa_siape}} (que só traz o Cadastro): baixa o
+#' mesmo zip mensal uma única vez e devolve também os arquivos de Afastamentos
+#' (período de afastamento por servidor) e Remuneração (composição da remuneração
+#' mensal bruta/líquida/verbas indenizatórias por servidor) — já filtrados para os
+#' `id_servidor_portal` da Funai (identificados a partir do próprio Cadastro deste
+#' anomês, coluna `cod_org_exercicio`). As colunas de Afastamentos/Remuneração são
+#' devolvidas com os nomes ORIGINAIS do Portal da Transparência (não renomeadas),
+#' já que — ao contrário do Cadastro — esses arquivos não têm um layout
+#' posicional/sem-header a normalizar.
+#'
+#' @param anomes Anomês desejado. Se \code{NULL} (padrão), detecta automaticamente o
+#'   anomês mais recente disponível.
+#' @param max_tries Número de retentativas por requisição HTTP, em caso de erro de
+#'   conexão ou HTTP.
+#' @param verbose Se \code{TRUE} (padrão), exibe mensagens de progresso.
+#'
+#' @return Lista com `cadastro` (mesmas colunas de \code{\link{funai_importa_siape}}),
+#'   `afastamentos` (`Id_SERVIDOR_PORTAL`, `DATA_INICIO_AFASTAMENTO`,
+#'   `DATA_FIM_AFASTAMENTO` — só 1 linha por afastamento registrado, nem todo
+#'   servidor aparece aqui) e `remuneracao` (`Id_SERVIDOR_PORTAL` + as colunas de
+#'   composição de remuneração do mês, 1 linha por servidor). O anomês efetivamente
+#'   usado (`AAAAMM`) fica em `attr(resultado, "anomes")`.
+#'
+#' @export
+#' @importFrom dplyr filter
+funai_importa_siape_completo <- function(anomes = NULL, max_tries = 5, verbose = TRUE) {
+
+  anomes_final <- if (is.null(anomes)) {
+    .siape_localiza_anomes_disponivel(max_tries = max_tries, verbose = verbose)
+  } else {
+    .siape_normaliza_anomes(anomes)
+  }
+
+  if (verbose) message("Importando SIAPE completo (Cadastro + Afastamentos + Remuneração) — anomês: ", anomes_final)
+
+  brutos <- .siape_baixa_extrai_completo(
+    anomes_final,
+    arquivos = c("Cadastro", "Afastamentos", "Remuneracao"),
+    max_tries = max_tries, verbose = verbose
+  )
+
+  cadastro <- brutos$Cadastro
+  cols <- .siape_colunas_cadastro()
+  if (ncol(cadastro) != length(cols)) {
+    stop(
+      "O arquivo Cadastro.csv do anomês ", anomes_final, " tem ", ncol(cadastro),
+      " colunas; eram esperadas ", length(cols),
+      ". O layout do Portal da Transparência pode ter mudado.",
+      call. = FALSE
+    )
+  }
+  colnames(cadastro) <- cols
+
+  codigo_funai_siape <- 30202
+  cadastro <- dplyr::filter(cadastro, cod_org_exercicio == as.character(codigo_funai_siape))
+  ids_funai <- unique(cadastro$id_servidor_portal)
+
+  afastamentos <- dplyr::filter(brutos$Afastamentos, Id_SERVIDOR_PORTAL %in% ids_funai)
+  remuneracao <- dplyr::filter(brutos$Remuneracao, Id_SERVIDOR_PORTAL %in% ids_funai)
+
+  resultado <- list(cadastro = cadastro, afastamentos = afastamentos, remuneracao = remuneracao)
+  attr(resultado, "anomes") <- anomes_final
+
+  resultado
+}
+
 #' Importa dados de servidores do SIAPE do Portal da Transparência
 #'
 #' Baixa o arquivo mensal "Cadastro de Servidores SIAPE" do Portal da Transparência
