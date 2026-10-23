@@ -17,7 +17,11 @@ classificação hierárquica, dados territoriais do IBGE, coordenadas geográfic
 para cada linha de cargo comissionado (CCE/FCE), o valor unitário em R$ e a
 pontuação unitária do nível (\code{Valor Unitário Cargo (R$)}, \code{Pontos
 Unitário Cargo} — via \code{\link{siorg_catalogo_cargos_comissionados}}; \code{NA}
-nas linhas que não são de cargo comissionado).
+nas linhas que não são de cargo comissionado). Inclui também
+\code{codigo_ibge_municipio}, o Código Município Completo do IBGE (7 dígitos) bruto
+retornado pela API do SIORG — o mesmo valor usado internamente para resolver
+\code{Município}/\code{UF} via o DTB, preservado aqui para permitir join exato por
+código em vez de por nome em projetos consumidores.
 }
 \description{
 Consulta a estrutura organizacional completa da Funai via
