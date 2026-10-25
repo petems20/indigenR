@@ -7,6 +7,17 @@
   if (length(m) == 0) NULL else m
 }
 
+#' User-Agent enviado aos GeoServers
+#'
+#' O GeoServer da Funai responde HTTP 403 a requisições cujo User-Agent contém "libcurl"
+#' — o padrão do httr ("libcurl/x r-curl/x httr/x"). Por isso as requisições WFS mandam
+#' um User-Agent próprio.
+#' @keywords internal
+#' @noRd
+.geoserver_wfs_user_agent <- function() {
+  "indigenR (R; https://github.com/petems20/indigenR)"
+}
+
 #' Executa uma requisição HTTP a um GeoServer com retentativa e backoff exponencial
 #'
 #' Retenta em caso de erro de conexão, limite de requisições (HTTP 429) ou erro de
@@ -15,11 +26,14 @@
 #'
 #' @keywords internal
 #' @noRd
-#' @importFrom httr GET timeout status_code content
+#' @importFrom httr GET timeout status_code content user_agent
 .geoserver_wfs_com_retry <- function(url, contexto, max_tries, verbose) {
   tentativa <- 1
   repeat {
-    resp <- tryCatch(httr::GET(url, httr::timeout(60)), error = function(e) e)
+    resp <- tryCatch(
+      httr::GET(url, httr::timeout(60), httr::user_agent(.geoserver_wfs_user_agent())),
+      error = function(e) e
+    )
 
     if (inherits(resp, "error")) {
       if (tentativa >= max_tries) {
